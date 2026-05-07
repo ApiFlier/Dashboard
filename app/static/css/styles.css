@@ -13,20 +13,105 @@
     --mvfr: #3498db;
     --ifr: #e74c3c;
     --lifr: #9b59b6;
+
+    /* Theme Variables (Light Default) */
+    --bg-color: #f4f7f6;
+    --card-bg: #ffffff;
+    --text-color: #333333;
+    --text-muted: #666666;
+    --border-color: #dddddd;
+    --header-bg: var(--primary);
+    --header-text: #ffffff;
+    --input-bg: #ffffff;
+    --input-text: #333333;
+    --table-header-bg: var(--light);
+    --table-header-text: var(--secondary);
+    --favored-bg: #e8f5e9;
+    --warning-bg: #fff3e0;
+    --code-bg: #f8f9fa;
+    --chip-bg: var(--light);
+    --chip-hover-bg: #e0e0e0;
+    --card-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    --danger-bg: #f8d7da;
+    --danger-text: #721c24;
+    --danger-border: #f5c6cb;
+    --card-bg-alt: #fcfcfc;
+}
+
+body.theme-dark {
+    --primary: #90caf9;
+    --secondary: #1e1e1e;
+    --accent: #64b5f6;
+    --light: #333333;
+    --gray: #a0a0a0;
+    
+    --bg-color: #121212;
+    --card-bg: #1e1e1e;
+    --text-color: #e0e0e0;
+    --text-muted: #a0a0a0;
+    --border-color: #333333;
+    --header-bg: #1f1f1f;
+    --header-text: #e0e0e0;
+    --input-bg: #2d2d2d;
+    --input-text: #e0e0e0;
+    --table-header-bg: #2d2d2d;
+    --table-header-text: #e0e0e0;
+    --favored-bg: #1b3a1e;
+    --warning-bg: #4a3311;
+    --code-bg: #2d2d2d;
+    --chip-bg: #333333;
+    --chip-hover-bg: #444444;
+    --card-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    --danger-bg: #4a191b;
+    --danger-text: #ff8a8a;
+    --danger-border: #6b2226;
+    --card-bg-alt: #2a2a2a;
+}
+
+@media (prefers-color-scheme: dark) {
+    body:not(.theme-light) {
+        --primary: #90caf9;
+        --secondary: #1e1e1e;
+        --accent: #64b5f6;
+        --light: #333333;
+        --gray: #a0a0a0;
+        
+        --bg-color: #121212;
+        --card-bg: #1e1e1e;
+        --text-color: #e0e0e0;
+        --text-muted: #a0a0a0;
+        --border-color: #333333;
+        --header-bg: #1f1f1f;
+        --header-text: #e0e0e0;
+        --input-bg: #2d2d2d;
+        --input-text: #e0e0e0;
+        --table-header-bg: #2d2d2d;
+        --table-header-text: #e0e0e0;
+        --favored-bg: #1b3a1e;
+        --warning-bg: #4a3311;
+        --code-bg: #2d2d2d;
+        --chip-bg: #333333;
+        --chip-hover-bg: #444444;
+        --card-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        --danger-bg: #4a191b;
+        --danger-text: #ff8a8a;
+        --danger-border: #6b2226;
+        --card-bg-alt: #2a2a2a;
+    }
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
     padding: 0;
-    background: #f4f7f6;
-    color: #333;
+    background: var(--bg-color);
+    color: var(--text-color);
     line-height: 1.6;
 }
 
 header {
-    background: var(--primary);
-    color: #fff;
+    background: var(--header-bg);
+    color: var(--header-text);
     padding: 1rem 2rem;
     display: flex;
     justify-content: space-between;
@@ -197,10 +282,10 @@ main {
 }
 
 .card {
-    background: #fff;
+    background: var(--card-bg);
     border-radius: 8px;
     padding: 1.25rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: var(--card-shadow);
     display: flex;
     flex-direction: column;
 }
@@ -241,13 +326,15 @@ main {
 .chip.ifr { background: var(--ifr); }
 .chip.lifr { background: var(--lifr); }
 .chip.unknown { background: var(--gray); }
+.chip.info { background: var(--info); }
+.chip.danger { background: var(--danger); }
 
 .chip.risk-low { background: var(--success); }
 .chip.risk-moderate { background: var(--warning); }
 .chip.risk-high { background: var(--danger); }
 
 .warning-callout {
-    background: #fff3e0;
+    background: var(--warning-bg);
     border-left: 4px solid var(--warning);
     padding: 0.75rem;
     margin-bottom: 1rem;
@@ -269,15 +356,14 @@ th, td {
     padding: 0.75rem;
     border-bottom: 1px solid var(--light);
 }
-
 th {
-    background: var(--light);
+    background: var(--table-header-bg);
+    color: var(--table-header-text);
     font-size: 0.85rem;
-    color: var(--secondary);
 }
 
 .favored {
-    background: #e8f5e9;
+    background: var(--favored-bg);
     font-weight: bold;
 }
 

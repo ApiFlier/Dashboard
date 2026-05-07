@@ -1,4 +1,6 @@
 let refreshTimer = null;
+let currentIcao = null;
+let isRefreshing = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -9,6 +11,11 @@ function initApp() {
     const searchInput = document.getElementById('airport-search');
     const logo = document.querySelector('.logo');
     const refreshBtn = document.getElementById('refresh-btn');
+    
+    // Apply initial theme from cache
+    const initialSettings = utils.getSettings();
+    utils.applyTheme(initialSettings.theme_mode);
+
     
     logo.addEventListener('click', (e) => {
         e.preventDefault();
@@ -30,8 +37,11 @@ function initApp() {
         }
     });
 
+    // Autocomplete implementation
+    setupAutocomplete(searchInput);
+
     refreshBtn.addEventListener('click', () => {
-        handleRoute(true);
+        refreshCurrentView();
     });
 
     window.addEventListener('hashchange', handleRoute);
@@ -48,17 +58,63 @@ function initApp() {
     handleRoute();
 }
 
+function setupAutocomplete(input) {
+    const container = document.createElement('div');
+    container.className = 'autocomplete-suggestions';
+    container.style.display = 'none';
+    input.parentNode.appendChild(container);
+
+    let debounceTimer = null;
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        const q = input.value.trim();
+        if (q.length < 2) {
+            container.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(async () => {
+            try {
+                const results = await api.searchAirports(q);
+                if (results.length > 0) {
+                    container.innerHTML = results.map(a => `
+                        <div class="suggestion-item" data-icao="${a.icao}">
+                            <span class="suggestion-icao">${a.icao}</span>
+                            <span class="suggestion-name">${a.name}</span>
+                        </div>
+                    `).join('');
+                    container.style.display = 'block';
+                } else {
+                    container.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Search failed', e);
+            }
+        }, 300);
+    });
+
+    container.addEventListener('click', (e) => {
+        const item = e.target.closest('.suggestion-item');
+        if (item) {
+            const icao = item.dataset.icao;
+            input.value = icao;
+            container.style.display = 'none';
+            navigateToAirport(icao);
+        }
+    });
+
+    // Close on click outside
+    document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !container.contains(e.target)) {
+            container.style.display = 'none';
+        }
+    });
+}
+
 function startRefreshTimer() {
     stopRefreshTimer();
-    const settings = utils.getSettings();
-    const interval = Math.max(settings.refresh_interval, 30) * 1000;
-    
-    refreshTimer = setInterval(() => {
-        if (!document.hidden) {
-            console.log('Auto-refreshing current view...');
-            handleRoute(true);
-        }
-    }, interval);
+    // Temporarily disabled for stability
 }
 
 function stopRefreshTimer() {
@@ -70,17 +126,83 @@ function stopRefreshTimer() {
 
 function navigateToAirport(icao) {
     utils.addRecentAirport(icao);
+    api.addRecent(icao).catch(e => console.warn('Failed to sync recent to backend', e));
     window.location.hash = `/airport/${icao}`;
 }
 
-async function handleRoute(isRefresh = false) {
+function updateNavLinks(icao) {
+    const nav = document.getElementById('main-nav');
+    const dashboardLink = document.getElementById('nav-home');
+    const settings = utils.getSettings();
+    
+    // Always show nav if an airport is specified or if default_airport is set
+    if (!icao && !settings.default_airport) {
+        nav.style.display = 'none';
+        return;
+    }
+    nav.style.display = 'flex';
+    
+    // Dashboard link behavior: current airport if exists, else default
+    const targetIcao = icao || settings.default_airport;
+    dashboardLink.href = `#/airport/${targetIcao}`;
+
+    // Sub-nav links
+    const links = {
+        'nav-brief': 'brief',
+        'nav-weather': 'weather',
+        'nav-runways': 'runways',
+        'nav-alternates': 'alternates',
+        'nav-hazards': 'hazards'
+    };
+
+    for (const [id, view] of Object.entries(links)) {
+        const el = document.getElementById(id);
+        if (el) el.href = `#/airport/${targetIcao}/${view}`;
+    }
+}
+
+async function handleRoute() {
     const hash = window.location.hash.substring(1) || '/';
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
-    const lastUpdatedEl = document.getElementById('last-updated');
     
+    // 1. Sync settings from backend
+    let settings;
+    let backendSuccess = false;
+    try {
+        settings = await api.getSettings();
+        console.log('Settings loaded from backend', settings);
+        utils.saveSettings(settings); // cache to local
+        backendSuccess = true;
+    } catch (e) {
+        console.warn('Using cached settings');
+        settings = utils.getSettings();
+    }
+    
+    // Direct airport route check - bypass setup redirect
+    if (hash.startsWith('/airport/')) {
+        const parts = hash.split('/');
+        const icao = parts[2];
+        currentIcao = icao;
+        updateNavLinks(icao);
+        
+        content.innerHTML = '<div class="loading">Loading airport data...</div>';
+        
+        await refreshCurrentView();
+        return;
+    }
+
+    // Check for first-run
+    // Show setup if no default airport is configured
+    if (!settings.default_airport && hash !== '/settings' && hash !== '/search') {
+        console.log("Showing first-run setup: no default airport");
+        stopRefreshTimer();
+        renderFirstRun(content);
+        return;
+    }
+
     if (hash === '/') {
-        const settings = utils.getSettings();
+        console.log(`Routing to dashboard: ${settings.default_airport}`);
         window.location.hash = `/airport/${settings.default_airport}`;
         return;
     }
@@ -88,6 +210,8 @@ async function handleRoute(isRefresh = false) {
     if (hash === '/search') {
         stopRefreshTimer();
         statusBar.style.display = 'none';
+        currentIcao = null;
+        updateNavLinks(null);
         renderSearch(content);
         return;
     }
@@ -95,75 +219,85 @@ async function handleRoute(isRefresh = false) {
     if (hash === '/settings') {
         stopRefreshTimer();
         statusBar.style.display = 'none';
+        // Keep currentIcao for sub-nav persistence
+        updateNavLinks(currentIcao);
         renderSettings(content);
         return;
     }
+}
 
-    if (hash.startsWith('/airport/')) {
-        const parts = hash.split('/');
-        const icao = parts[2];
-        const view = parts[3] || 'dashboard';
-        
-        try {
-            if (!isRefresh) {
-                content.innerHTML = '<div class="loading">Loading airport data...</div>';
-            }
-            
-            if (view === 'dashboard') {
-                await renderDashboard(content, icao);
-            } else if (view === 'brief') {
-                await renderFullBrief(content, icao);
-            } else if (view === 'weather') {
-                await renderDetailedWeather(content, icao);
-            } else if (view === 'runways') {
-                await renderDetailedRunways(content, icao);
-            } else if (view === 'alternates') {
-                await renderDetailedAlternates(content, icao);
-            } else if (view === 'hazards') {
-                await renderDetailedHazards(content, icao);
-            } else if (view === 'directory') {
-                await renderDetailedDirectory(content, icao);
-            }
+async function refreshCurrentView() {
+    if (isRefreshing) return;
+    
+    const hash = window.location.hash.substring(1) || '/';
+    if (!hash.startsWith('/airport/')) return;
+    
+    const parts = hash.split('/');
+    const icao = parts[2];
+    const view = parts[3] || 'dashboard';
+    
+    const content = document.getElementById('app-content');
+    const statusBar = document.getElementById('status-bar');
+    const lastUpdatedEl = document.getElementById('last-updated');
 
-            // Update status bar
-            lastUpdatedEl.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
-            statusBar.style.display = 'flex';
-            
-            // Re-start timer for this page
-            startRefreshTimer();
-
-        } catch (e) {
-            console.error(e);
-            stopRefreshTimer();
-            statusBar.style.display = 'none';
-            
-            if (e.status === 404) {
-                content.innerHTML = `
-                    <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
-                        <h2>Airport Not Found</h2>
-                        <p>The airport <strong>${icao}</strong> was not found in our database.</p>
-                        <p style="font-size: 0.9rem; color: var(--gray);">Please verify the ICAO code and try again.</p>
-                        <br>
-                        <button onclick="window.location.hash = '/search'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Search</button>
-                    </div>
-                `;
-            } else {
-                content.innerHTML = `
-                    <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
-                        <h2>Unable to load airport data</h2>
-                        <p>Something went wrong while fetching data for <strong>${icao}</strong>.</p>
-                        <div style="background: #f8d7da; color: #721c24; padding: 1rem; border-radius: 4px; text-align: left; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; border: 1px solid #f5c6cb;">
-                            <strong>Technical Details:</strong><br>
-                            Status: ${e.status || 'Network Error'}<br>
-                            Endpoint: ${e.url || 'N/A'}<br>
-                            Message: ${e.message || 'Unknown failure'}
-                        </div>
-                        <br>
-                        <button onclick="window.location.hash = '/'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Dashboard</button>
-                    </div>
-                `;
-            }
+    isRefreshing = true;
+    try {
+        if (view === 'dashboard') {
+            await renderDashboard(content, icao);
+        } else if (view === 'brief') {
+            await renderFullBrief(content, icao);
+        } else if (view === 'weather') {
+            await renderDetailedWeather(content, icao);
+        } else if (view === 'runways') {
+            await renderDetailedRunways(content, icao);
+        } else if (view === 'alternates') {
+            await renderDetailedAlternates(content, icao);
+        } else if (view === 'hazards') {
+            await renderDetailedHazards(content, icao);
+        } else if (view === 'directory') {
+            await renderDetailedDirectory(content, icao);
         }
+
+        // Update status bar
+        lastUpdatedEl.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
+        statusBar.style.display = 'flex';
+        
+        // Re-start timer for this page
+        startRefreshTimer();
+
+    } catch (e) {
+        console.error(e);
+        stopRefreshTimer();
+        statusBar.style.display = 'none';
+        
+        if (e.status === 404) {
+            content.innerHTML = `
+                <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+                    <h2>Airport Not Found</h2>
+                    <p>The airport <strong>${icao}</strong> was not found in our database.</p>
+                    <p style="font-size: 0.9rem; color: var(--text-muted);">Please verify the ICAO code and try again.</p>
+                    <br>
+                    <button onclick="window.location.hash = '/search'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Search</button>
+                </div>
+            `;
+        } else {
+            content.innerHTML = `
+                <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+                    <h2>Unable to load airport data</h2>
+                    <p>Something went wrong while fetching data for <strong>${icao}</strong>.</p>
+                    <div style="background: var(--danger-bg); color: var(--danger-text); padding: 1rem; border-radius: 4px; text-align: left; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--danger-border);">
+                        <strong>Technical Details:</strong><br>
+                        Status: ${e.status || 'Network Error'}<br>
+                        Endpoint: ${e.url || 'N/A'}<br>
+                        Message: ${e.message || 'Unknown failure'}
+                    </div>
+                    <br>
+                    <button onclick="window.location.hash = '/'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Dashboard</button>
+                </div>
+            `;
+        }
+    } finally {
+        isRefreshing = false;
     }
 }
 
@@ -188,7 +322,7 @@ function renderSearch(container) {
                 <input type="text" id="home-search-input" placeholder="Enter Airport ICAO (e.g. KAGC)">
                 <button id="home-search-btn">Open Dashboard</button>
             </div>
-            <p style="color: var(--gray); font-size: 0.9rem;">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">
                 Try: KAGC, KPIT, KERI, KAVP
             </p>
             ${recentHtml}
@@ -207,16 +341,82 @@ function renderSearch(container) {
     input.addEventListener('keypress', (e) => { if (e.key === 'Enter') go(); });
 }
 
+function renderFirstRun(container) {
+    container.innerHTML = `
+        <div class="home-container">
+            <h1>Welcome to AirfieldOps</h1>
+            <p>To get started, please choose your default airport.</p>
+            <div class="home-search" style="position: relative;">
+                <input type="text" id="setup-search" placeholder="Enter Airport ICAO or Name (e.g. KAGC)" autocomplete="off">
+                <button id="setup-save-btn" disabled>Save and Start</button>
+            </div>
+            <div id="setup-error" style="color: red; margin-top: 10px; display: none;"></div>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;">
+                This can be changed later in Settings.
+            </p>
+        </div>
+    `;
+
+    const input = document.getElementById('setup-search');
+    const btn = document.getElementById('setup-save-btn');
+    const errorEl = document.getElementById('setup-error');
+    setupAutocomplete(input);
+
+    input.addEventListener('input', () => {
+        btn.disabled = input.value.trim().length < 3;
+        errorEl.style.display = 'none';
+    });
+
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !btn.disabled) {
+            btn.click();
+        }
+    });
+
+    btn.addEventListener('click', async () => {
+        const icao = input.value.trim().toUpperCase();
+        try {
+            // Validate airport exists
+            await api.getDirectory(icao);
+            
+            const defaults = {
+                default_airport: icao,
+                alternate_radius_nm: 75,
+                refresh_interval_seconds: 300
+            };
+            
+            // Save to backend
+            await api.updateSettings(defaults);
+            
+            // Confirm from backend
+            const updated = await api.getSettings();
+            if (updated.default_airport !== icao) {
+                throw new Error("Backend confirmation failed");
+            }
+            
+            utils.saveSettings(updated);
+            navigateToAirport(icao);
+        } catch (e) {
+            errorEl.innerText = `Failed to save ${icao}. Verify it is a valid airport.`;
+            errorEl.style.display = 'block';
+        }
+    });
+}
+
 async function renderDashboard(container, icao) {
     // Single aggregate call
     const data = await api.getDashboard(icao);
     const { brief, weather, runways, alternates: alts, hazards, airport: dir } = data;
 
     container.innerHTML = `
-        <div class="page-header">
-            <h1>${icao} - ${dir.name}</h1>
-            <div style="font-size: 0.9rem; color: var(--gray);">Dashboard Snapshot • ${utils.formatDate(new Date())}</div>
+        <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1>${icao} - ${dir.name}</h1>
+                <div style="font-size: 0.9rem; color: var(--text-muted);">Dashboard Snapshot • ${utils.formatDate(new Date())}</div>
+            </div>
+            <button id="dashboard-set-default" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Set as Default</button>
         </div>
+        <div id="dashboard-set-default-msg" style="text-align: right; color: var(--success); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 1rem; display: none;">Saved!</div>
         <div class="grid">
             ${cards.renderBriefCard(brief)}
             ${cards.renderWeatherCard(weather)}
@@ -227,6 +427,21 @@ async function renderDashboard(container, icao) {
             ${cards.renderOfficialResourcesCard(icao)}
         </div>
     `;
+
+    document.getElementById('dashboard-set-default').addEventListener('click', async () => {
+        try {
+            const settings = utils.getSettings();
+            const newSettings = { ...settings, default_airport: icao };
+            await api.updateSettings(newSettings);
+            const updated = await api.getSettings();
+            utils.saveSettings(updated);
+            const msgEl = document.getElementById('dashboard-set-default-msg');
+            msgEl.style.display = 'block';
+            setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
+        } catch (e) {
+            alert('Failed to save default airport.');
+        }
+    });
 }
 
 async function renderFullBrief(container, icao) {
@@ -234,7 +449,7 @@ async function renderFullBrief(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Operational Brief: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         <div class="card" style="max-width: 800px; margin: 0 auto;">
             <h2>Airport Snapshot</h2>
@@ -293,8 +508,12 @@ async function renderFullBrief(container, icao) {
                 </div>
             </div>
 
-            <div class="warning-callout" style="font-size: 0.8rem; border-left-color: var(--gray);">
+            <div class="warning-callout" style="font-size: 0.8rem; border-left-color: var(--text-muted);">
                 <strong>Advisory Only:</strong> ${data.disclaimer}
+            </div>
+
+            <div style="margin-top: 2rem;">
+                ${cards.renderOfficialResourcesCard(icao)}
             </div>
         </div>
     `;
@@ -305,14 +524,14 @@ async function renderDetailedWeather(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Detailed Weather: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="grid">
             <div class="card">
                 <h2>Current Observation (METAR)</h2>
                 ${data.metar ? `
-                    <code style="display: block; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.metar.raw}</code>
+                    <code style="display: block; background: var(--code-bg); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.metar.raw}</code>
                     <table class="table-container">
                         <tr><th>Flight Category</th><td>${utils.getFlightCategoryChip(data.metar.flight_category)}</td></tr>
                         <tr><th>Wind</th><td>${utils.formatWind(data.metar.wind)}</td></tr>
@@ -328,7 +547,7 @@ async function renderDetailedWeather(container, icao) {
             <div class="card">
                 <h2>Forecast (TAF)</h2>
                 ${data.taf ? `
-                    <code style="display: block; background: #f8f9fa; padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.taf.raw}</code>
+                    <code style="display: block; background: var(--code-bg); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.taf.raw}</code>
                     <p><strong>Issued:</strong> ${utils.formatDate(data.taf.issued_at)}</p>
                     <p><strong>Valid:</strong> ${utils.formatDate(data.taf.valid_from)} to ${utils.formatDate(data.taf.valid_to)}</p>
                     <h3>Periods</h3>
@@ -350,7 +569,7 @@ async function renderDetailedRunways(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Runway Intelligence: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="card">
@@ -401,8 +620,12 @@ async function renderDetailedRunways(container, icao) {
                     </tbody>
                 </table>
             </div>
-            <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--gray);">
+            <div style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted);">
                 <p>Note: Headwind/Tailwind values are relative to the runway heading. Crosswind is absolute.</p>
+            </div>
+            
+            <div style="margin-top: 2rem;">
+                ${cards.renderOfficialResourcesCard(icao)}
             </div>
         </div>
     `;
@@ -414,7 +637,7 @@ async function renderDetailedAlternates(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Ranked Alternates: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         <p style="margin-bottom: 1rem; font-style: italic;">Showing airports within ${settings.alternate_radius} nm radius.</p>
         <div class="card">
@@ -459,7 +682,7 @@ async function renderDetailedHazards(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Weather Hazards & Alerts: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="card" style="margin-bottom: 2rem;">
@@ -512,7 +735,7 @@ async function renderDetailedHazards(container, icao) {
             ` : '<p>No active NWS alerts for this location.</p>'}
         </div>
         
-        <div style="margin-top: 2rem; color: var(--gray); font-size: 0.85rem;">
+        <div style="margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem;">
             <p>Sources: ${data.sources.join(', ')}</p>
             <p>Note: SIGMET/G-AIRMET/CWA parsing is currently limited. Always check official aviation weather sources.</p>
         </div>
@@ -524,7 +747,7 @@ async function renderDetailedDirectory(container, icao) {
     container.innerHTML = `
         <div class="page-header">
             <h1>Airport Directory: ${icao}</h1>
-            <a href="#/airport/${icao}">← Back to Dashboard</a>
+            <a href="#/airport/${icao}">← Return to Dashboard</a>
         </div>
         <div class="grid">
             <div class="card">
@@ -563,12 +786,12 @@ async function renderSettings(container) {
         <div class="grid">
             <div class="card">
                 <h2>Preferences</h2>
-                <p style="font-size: 0.85rem; color: var(--gray); margin-bottom: 1.5rem;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem;">
                     Configure how AirfieldOps behaves on startup and during active monitoring.
                 </p>
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Default Airport (ICAO)</label>
-                    <small style="display: block; color: var(--gray); margin-bottom: 0.5rem;">The dashboard that loads when you first open the app.</small>
+                    <small style="display: block; color: var(--text-muted); margin-bottom: 0.5rem;">The dashboard that loads when you first open the app.</small>
                     <input type="text" id="set-default-apt" value="${settings.default_airport}" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 1.5rem;">
@@ -577,9 +800,16 @@ async function renderSettings(container) {
                 </div>
                 <div style="margin-bottom: 2rem;">
                     <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Refresh Interval (Seconds)</label>
-                    <small style="display: block; color: var(--gray); margin-bottom: 0.5rem;">How often the dashboard updates (min: 30s).</small>
+                    <small style="display: block; color: var(--text-muted); margin-bottom: 0.5rem;">Automatically refreshes the current dashboard/page while the tab is visible (min: 30s).</small>
                     <input type="number" id="set-refresh" value="${settings.refresh_interval}" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
                 </div>
+                
+                ${currentIcao ? `
+                    <div style="margin-bottom: 1.5rem;">
+                        <button id="set-current-default-btn" class="chip info" style="border:none; padding: 0.5rem 1rem; width: 100%; cursor:pointer; font-size: 0.85rem; background: var(--secondary);">Use ${currentIcao} as Default</button>
+                    </div>
+                ` : ''}
+
                 <button id="save-settings-btn" class="chip info" style="border:none; padding: 1rem 2rem; width: 100%; cursor:pointer; font-size: 1rem;">Save Settings</button>
                 <div id="settings-msg" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
             </div>
@@ -632,4 +862,10 @@ async function renderSettings(container) {
             msgEl.innerText = `Error: Airport ${icao} not found in reference data.`;
         }
     });
+
+    if (currentIcao) {
+        document.getElementById('set-current-default-btn').addEventListener('click', () => {
+            document.getElementById('set-default-apt').value = currentIcao;
+        });
+    }
 }

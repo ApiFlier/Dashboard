@@ -40,6 +40,36 @@ const api = {
     async getReferenceStatus() {
         return this._fetch(`/api/reference/status`);
     },
+    async getSettings() {
+        return this._fetch(`/api/settings`);
+    },
+    async updateSettings(settings) {
+        const res = await fetch(`/api/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+        if (!res.ok) throw new Error('Failed to update settings');
+        return res.json();
+    },
+    async getRecent() {
+        return this._fetch(`/api/recent`);
+    },
+    async addRecent(icao) {
+        return fetch(`/api/recent/${icao}`, { method: 'POST' });
+    },
+    async clearRecent() {
+        return fetch(`/api/recent`, { method: 'DELETE' });
+    },
+    async getFavorites() {
+        return this._fetch(`/api/favorites`);
+    },
+    async addFavorite(icao) {
+        return fetch(`/api/favorites/${icao}`, { method: 'POST' });
+    },
+    async removeFavorite(icao) {
+        return fetch(`/api/favorites/${icao}`, { method: 'DELETE' });
+    },
     async getSettingsDefaults() {
         return this._fetch(`/api/settings/defaults`);
     },

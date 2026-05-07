@@ -119,17 +119,34 @@ def run_migrations(conn: sqlite3.Connection):
             )
         """)
         set_schema_version(conn, 1)
+        current_version = 1
+
+    if current_version < 2:
+        logger.info("Running schema migration to version 2")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS favorites (
+                ident TEXT PRIMARY KEY,
+                created_at TEXT NOT NULL
+            )
+        """)
+        set_schema_version(conn, 2)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = 'default_airport'")
-    if not cursor.fetchone():
-        import os
-        default_airport = os.environ.get("DEFAULT_AIRPORT", "KAGC")
+    defaults = {
+        "default_airport": os.environ.get("DEFAULT_AIRPORT", ""),
+        "alternate_radius_nm": "75",
+        "refresh_interval_seconds": "300",
+        "theme_mode": "system",
+        "monitor_mode": "0",
+        "show_raw_weather_default": "1",
+        "accent_color": "blue"
+    }
+    
+    for key, val in defaults.items():
         conn.execute(
-            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-            ("default_airport", default_airport, now)
+            "INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, val, now)
         )
 
 def seed_reference_data_from_json(conn: sqlite3.Connection):

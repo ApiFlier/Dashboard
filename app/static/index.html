@@ -38,31 +38,9 @@
         <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.7;">Data sources: AviationWeather.gov, NWS api.weather.gov</p>
     </footer>
 
-    <script src="/static/js/utils.js"></script>
-    <script src="/static/js/api.js"></script>
-    <script src="/static/js/cards.js"></script>
-    <script src="/static/js/app.js"></script>
-    <script>
-        // Update nav links dynamically based on current airport
-        window.addEventListener('hashchange', () => {
-            const hash = window.location.hash;
-            const nav = document.getElementById('main-nav');
-            if (hash.startsWith('#/airport/')) {
-                const icao = hash.split('/')[2];
-                nav.style.display = 'flex';
-                document.querySelectorAll('#main-nav a').forEach(a => {
-                    if (a.id.startsWith('nav-') && a.id !== 'nav-home') {
-                        const view = a.id.replace('nav-', '');
-                        a.href = `#/airport/${icao}/${view === 'brief' ? 'brief' : view}`;
-                        if (view === 'brief') a.href = `#/airport/${icao}/brief`;
-                    }
-                });
-            } else if (hash === '#/' || hash === '') {
-                nav.style.display = 'none';
-            } else {
-                nav.style.display = 'flex';
-            }
-        });
-    </script>
+    <script src="/static/js/utils.js?v=20260507-6"></script>
+    <script src="/static/js/api.js?v=20260507-6"></script>
+    <script src="/static/js/cards.js?v=20260507-6"></script>
+    <script src="/static/js/app.js?v=20260507-6"></script>
 </body>
 </html>

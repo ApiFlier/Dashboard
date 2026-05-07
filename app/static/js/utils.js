@@ -48,23 +48,31 @@ const utils = {
     },
 
     getRecentAirports() {
+        // We now use the API for recent airports, but keep this for legacy fallback 
+        // until fully transitioned. Actually let's just use it as a cache.
         const recent = localStorage.getItem('recent_airports');
         return recent ? JSON.parse(recent) : [];
     },
 
     addRecentAirport(icao) {
+        // Sync to localStorage for fast lookup
         let recent = this.getRecentAirports();
         recent = recent.filter(a => a !== icao);
         recent.unshift(icao);
         recent = recent.slice(0, 5);
         localStorage.setItem('recent_airports', JSON.stringify(recent));
+        
+        // Backend sync happens in app.js
     },
 
     getSettings() {
         const defaults = {
-            default_airport: 'KAGC',
-            alternate_radius: 75,
-            refresh_interval: 300
+            default_airport: '',
+            alternate_radius_nm: 75,
+            refresh_interval_seconds: 300,
+            theme_mode: 'system',
+            monitor_mode: false,
+            accent_color: 'blue'
         };
         const saved = localStorage.getItem('app_settings');
         return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
@@ -72,5 +80,31 @@ const utils = {
 
     saveSettings(settings) {
         localStorage.setItem('app_settings', JSON.stringify(settings));
+        this.applyTheme(settings.theme_mode);
+    },
+
+    applyTheme(mode) {
+        if (mode === 'dark') {
+            document.body.classList.add('theme-dark');
+            document.body.classList.remove('theme-light');
+        } else if (mode === 'light') {
+            document.body.classList.add('theme-light');
+            document.body.classList.remove('theme-dark');
+        } else {
+            document.body.classList.remove('theme-light', 'theme-dark');
+        }
+    },
+
+    renderStatusLabel(status) {
+        const labels = {
+            'live': { class: 'vfr', text: 'Live' },
+            'cached': { class: 'info', text: 'Cached' },
+            'stale': { class: 'warning', text: 'Stale' },
+            'unavailable': { class: 'unknown', text: 'Unavailable' },
+            'error': { class: 'danger', text: 'Error' }
+        };
+        const s = status ? status.toLowerCase() : 'unknown';
+        const config = labels[s] || { class: 'unknown', text: s.toUpperCase() };
+        return `<span class="chip ${config.class}" style="font-size: 0.6rem; padding: 0.1rem 0.4rem; margin-left: 0.5rem; vertical-align: middle;">${config.text}</span>`;
     }
 };

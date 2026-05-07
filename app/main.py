@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import airport, weather, runways, alternates, hazards, brief, settings, reference, debug
+from app.api.routes import airport, weather, runways, alternates, hazards, brief, settings, reference, debug, favorites, recent_airports
 from app.core.disclaimers import ADVISORY_DISCLAIMER
 
 from contextlib import asynccontextmanager
@@ -35,6 +35,8 @@ app.include_router(alternates.router, prefix="/api")
 app.include_router(hazards.router, prefix="/api")
 app.include_router(brief.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
+app.include_router(favorites.router, prefix="/api", tags=["favorites"])
+app.include_router(recent_airports.router, prefix="/api", tags=["recent"])
 app.include_router(reference.router, prefix="/api/reference", tags=["reference"])
 app.include_router(debug.router, prefix="/api/debug", tags=["debug"])
 

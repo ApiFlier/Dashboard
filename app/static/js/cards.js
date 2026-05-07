@@ -58,7 +58,7 @@ const cards = {
         }
 
         return `
-            <div class="runway-sketch-container" style="text-align: center; margin: 1rem 0; background: #fcfcfc; border: 1px solid #eee; border-radius: 8px; padding: 1rem;">
+            <div class="runway-sketch-container" style="text-align: center; margin: 1rem 0; background: var(--card-bg-alt); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
                 <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
                     <!-- N indicator -->
                     <text x="${center}" y="20" font-size="12" fill="#aaa" text-anchor="middle">N</text>
@@ -68,7 +68,7 @@ const cards = {
                     ${labels}
                     ${windArrow}
                 </svg>
-                <div style="font-size: 0.7rem; color: var(--gray); margin-top: 0.5rem;">
+                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.5rem;">
                     Simplified runway sketch. Not for navigation.
                 </div>
             </div>
@@ -121,14 +121,14 @@ const cards = {
                         <strong>METAR</strong>
                         ${utils.getFlightCategoryChip(metar.flight_category)}
                     </div>
-                    <code style="display: block; background: #f8f9fa; padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.85rem; border-radius: 4px;">${metar.raw}</code>
+                    <code style="display: block; background: var(--code-bg); padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.85rem; border-radius: 4px;">${metar.raw}</code>
                     <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.9rem;">
                         <div>Wind: ${utils.formatWind(metar.wind)}</div>
                         <div>Visibility: ${metar.visibility_sm ?? 'N/A'} SM</div>
                         <div>Ceiling: ${metar.ceiling_ft_agl ?? 'None'} FT</div>
                         <div>Altimeter: ${metar.altimeter_in_hg ?? 'N/A'} IN</div>
                     </div>
-                    <div style="font-size: 0.75rem; color: #666; margin-top: 0.5rem;">Observed: ${utils.formatDate(metar.observed_at)}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Observed: ${utils.formatDate(metar.observed_at)}</div>
                 </div>
             `;
         } else {
@@ -139,8 +139,8 @@ const cards = {
             html += `
                 <div>
                     <strong>TAF</strong>
-                    <code style="display: block; background: #f8f9fa; padding: 0.5rem; font-size: 0.85rem; border-radius: 4px; margin-top: 0.5rem;">${taf.raw}</code>
-                    <div style="font-size: 0.75rem; color: #666; margin-top: 0.5rem;">Issued: ${utils.formatDate(taf.issued_at)}</div>
+                    <code style="display: block; background: var(--code-bg); padding: 0.5rem; font-size: 0.85rem; border-radius: 4px; margin-top: 0.5rem;">${taf.raw}</code>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Issued: ${utils.formatDate(taf.issued_at)}</div>
                 </div>
             `;
         } else {
@@ -163,7 +163,7 @@ const cards = {
                 ${utils.renderWarnings(analysis.warnings)}
                 <p><strong>Favored:</strong> ${analysis.favored_runway.id || 'None'} - ${analysis.favored_runway.reason}</p>
                 
-                <div style="font-size: 0.8rem; color: var(--gray); margin-bottom: 0.5rem; text-align:center;">
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; text-align:center;">
                     Simplified sketch below. <strong>Use official FAA diagrams for navigation.</strong>
                 </div>
                 ${this.renderRunwaySketch(analysis.runways, analysis.favored_runway.id, analysis.wind_direction_deg)}
@@ -263,10 +263,10 @@ const cards = {
                     Risk Level: ${utils.getRiskLevelChip(hazards.risk_level)}
                 </div>
                 <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.5rem; font-size: 0.85rem; margin-bottom: 1rem;">
-                    <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px;">NWS Alerts: ${hazards.counts.nws_alerts}</div>
-                    <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px;">SIGMETs: ${hazards.counts.sigmets}</div>
-                    <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px;">G-AIRMETs: ${hazards.counts.gairmets}</div>
-                    <div style="background: #f8f9fa; padding: 0.5rem; border-radius: 4px;">CWAs: ${hazards.counts.cwas}</div>
+                    <div style="background: var(--code-bg); padding: 0.5rem; border-radius: 4px;">NWS Alerts: ${hazards.counts.nws_alerts}</div>
+                    <div style="background: var(--code-bg); padding: 0.5rem; border-radius: 4px;">SIGMETs: ${hazards.counts.sigmets}</div>
+                    <div style="background: var(--code-bg); padding: 0.5rem; border-radius: 4px;">G-AIRMETs: ${hazards.counts.gairmets}</div>
+                    <div style="background: var(--code-bg); padding: 0.5rem; border-radius: 4px;">CWAs: ${hazards.counts.cwas}</div>
                 </div>
         `;
 
@@ -289,16 +289,54 @@ const cards = {
     },
 
     renderDirectoryCard(airport) {
-...
-        html += `
-                </ul>
-                <div class="card-footer">
-                    <a href="#/airport/${airport.icao}/directory">Full Directory Info →</a>
-                </div>
+    if (!airport) {
+        return `
+            <div class="card">
+                <h2>Airport Directory</h2>
+                <p class="warning">Directory information unavailable.</p>
             </div>
         `;
-        return html;
-    },
+    }
+
+    const icao = airport.icao || airport.ident || airport.airport || "";
+    const name = airport.name || "Unknown airport";
+    const city = airport.city || "";
+    const state = airport.state || "";
+    const elevation = airport.elevation_ft ?? airport.elevation ?? "N/A";
+    const lat = airport.lat ?? airport.latitude;
+    const lon = airport.lon ?? airport.lng ?? airport.longitude;
+
+    const frequencies = airport.frequencies || [];
+    const freqItems = Array.isArray(frequencies) && frequencies.length
+        ? frequencies.slice(0, 5).map(freq => {
+            const type = freq.type || freq.description || "Frequency";
+            const mhz = freq.frequency_mhz || freq.frequency || freq.value || "";
+            return `<li>${type}: ${mhz}</li>`;
+        }).join("")
+        : `<li>No frequency data available</li>`;
+
+    return `
+        <div class="card">
+            <h2>Airport Directory</h2>
+            <p style="margin-bottom: 0.5rem;"><strong>${name}</strong></p>
+            <div style="font-size: 0.9rem; margin-bottom: 1rem;">
+                <div>ICAO: ${icao || "N/A"}</div>
+                ${city || state ? `<div>Location: ${city}${city && state ? ", " : ""}${state}</div>` : ""}
+                <div>Elev: ${elevation} FT</div>
+                <div>Pos: ${lat ?? "N/A"}, ${lon ?? "N/A"}</div>
+            </div>
+
+            <strong>Frequencies</strong>
+            <ul style="padding-left: 1.2rem; font-size: 0.85rem; margin-top: 0.5rem;">
+                ${freqItems}
+            </ul>
+
+            <div class="card-footer">
+                <a href="#/airport/${icao}/directory">Full Directory Info →</a>
+            </div>
+        </div>
+    `;
+},
 
     renderOfficialResourcesCard(icao) {
         // Remove 'K' for search if it's a 4-letter ICAO starting with K (common for US)
@@ -307,7 +345,7 @@ const cards = {
         return `
             <div class="card official-resources-card">
                 <h2>Official FAA Resources</h2>
-                <p style="font-size: 0.8rem; color: var(--gray); margin-bottom: 1rem;">Certified aeronautical data and diagrams.</p>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">Certified aeronautical data and diagrams.</p>
                 
                 <a href="https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/results/?cycle=current&ident=${searchId}" target="_blank">
                     <span>Airport Diagrams & Terminal Procedures</span>
@@ -316,7 +354,7 @@ const cards = {
                     <span>Chart Supplement (d-AFD)</span>
                 </a>
                 
-                <div class="warning-callout" style="margin-top: 1rem; font-size: 0.75rem; border-left-color: var(--gray);">
+                <div class="warning-callout" style="margin-top: 1rem; font-size: 0.75rem; border-left-color: var(--text-muted);">
                     Always verify data in official publications. This app is for advisory use only.
                 </div>
             </div>
