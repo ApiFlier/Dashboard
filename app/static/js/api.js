@@ -41,7 +41,7 @@ const api = {
         return this._fetch(`/api/reference/status`);
     },
     async getSettings() {
-        return this._fetch(`/api/settings`);
+        return this._fetch(`/api/settings?t=${Date.now()}`);
     },
     async updateSettings(settings) {
         const res = await fetch(`/api/settings`, {

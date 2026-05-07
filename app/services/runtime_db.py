@@ -76,6 +76,10 @@ def run_migrations(conn: sqlite3.Connection):
                 he_ident TEXT,
                 le_heading_deg REAL,
                 he_heading_deg REAL,
+                le_latitude_deg REAL,
+                le_longitude_deg REAL,
+                he_latitude_deg REAL,
+                he_longitude_deg REAL,
                 length_ft INTEGER,
                 width_ft INTEGER,
                 surface TEXT,
@@ -130,6 +134,18 @@ def run_migrations(conn: sqlite3.Connection):
             )
         """)
         set_schema_version(conn, 2)
+
+    if current_version < 3:
+        logger.info("Running schema migration to version 3")
+        try:
+            conn.execute("ALTER TABLE runways ADD COLUMN le_latitude_deg REAL")
+            conn.execute("ALTER TABLE runways ADD COLUMN le_longitude_deg REAL")
+            conn.execute("ALTER TABLE runways ADD COLUMN he_latitude_deg REAL")
+            conn.execute("ALTER TABLE runways ADD COLUMN he_longitude_deg REAL")
+        except sqlite3.OperationalError as e:
+            # Column might already exist if schema was partially updated
+            logger.warning(f"Migration to v3 warning: {e}")
+        set_schema_version(conn, 3)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()
@@ -197,8 +213,20 @@ def seed_reference_data_from_json(conn: sqlite3.Connection):
     for apt_id, rwys in runways.items():
         for rwy in rwys:
             conn.execute(
-                "INSERT INTO runways (airport_ident, surface_id, le_heading_deg, length_ft, width_ft, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (apt_id, rwy.get("id"), rwy.get("heading"), rwy.get("length_ft"), rwy.get("width_ft"), "seed_json", now)
+                "INSERT INTO runways (airport_ident, surface_id, le_heading_deg, le_latitude_deg, le_longitude_deg, he_latitude_deg, he_longitude_deg, length_ft, width_ft, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    apt_id, 
+                    rwy.get("id"), 
+                    rwy.get("heading"),
+                    rwy.get("le_latitude_deg"),
+                    rwy.get("le_longitude_deg"),
+                    rwy.get("he_latitude_deg"),
+                    rwy.get("he_longitude_deg"),
+                    rwy.get("length_ft"), 
+                    rwy.get("width_ft"), 
+                    "seed_json", 
+                    now
+                )
             )
 
     # 3. Seed Frequencies (Clear and re-seed for simplicity)

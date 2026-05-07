@@ -16,6 +16,10 @@ class RunwayConditions(BaseModel):
     heading: int
     length_ft: int
     width_ft: int
+    le_latitude_deg: Optional[float] = None
+    le_longitude_deg: Optional[float] = None
+    he_latitude_deg: Optional[float] = None
+    he_longitude_deg: Optional[float] = None
     headwind_kt: Optional[float] = None
     tailwind_kt: Optional[float] = None
     crosswind_kt: Optional[float] = None

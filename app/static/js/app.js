@@ -134,6 +134,7 @@ function updateNavLinks(icao) {
     const nav = document.getElementById('main-nav');
     const dashboardLink = document.getElementById('nav-home');
     const settings = utils.getSettings();
+    const hash = window.location.hash;
     
     // Always show nav if an airport is specified or if default_airport is set
     if (!icao && !settings.default_airport) {
@@ -148,21 +149,33 @@ function updateNavLinks(icao) {
 
     // Sub-nav links
     const links = {
-        'nav-brief': 'brief',
-        'nav-weather': 'weather',
-        'nav-runways': 'runways',
-        'nav-alternates': 'alternates',
-        'nav-hazards': 'hazards'
+        'nav-home': `#/airport/${targetIcao}`,
+        'nav-brief': `#/airport/${targetIcao}/brief`,
+        'nav-weather': `#/airport/${targetIcao}/weather`,
+        'nav-runways': `#/airport/${targetIcao}/runways`,
+        'nav-alternates': `#/airport/${targetIcao}/alternates`,
+        'nav-hazards': `#/airport/${targetIcao}/hazards`,
+        'nav-settings': `#/settings`
     };
 
-    for (const [id, view] of Object.entries(links)) {
+    // Remove active class from all first
+    document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+
+    for (const [id, href] of Object.entries(links)) {
         const el = document.getElementById(id);
-        if (el) el.href = `#/airport/${targetIcao}/${view}`;
+        if (el) {
+            el.href = href;
+            // Check if current hash matches exactly or is root of airport view
+            if (hash === href || (id === 'nav-home' && hash === `#/airport/${targetIcao}/dashboard`)) {
+                el.classList.add('active');
+            }
+        }
     }
 }
 
 async function handleRoute() {
     const hash = window.location.hash.substring(1) || '/';
+    console.log(`[Router] Handling route: "${hash}"`);
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
     
@@ -170,19 +183,29 @@ async function handleRoute() {
     let settings;
     let backendSuccess = false;
     try {
+        console.log("[Router] Fetching latest settings from backend...");
         settings = await api.getSettings();
-        console.log('Settings loaded from backend', settings);
+        console.log('[Router] Settings loaded from backend:', settings);
+        
+        if (settings.default_airport) {
+            console.log(`[Router] default_airport found in backend settings: "${settings.default_airport}"`);
+        } else {
+            console.log("[Router] backend default_airport is empty.");
+        }
+        
         utils.saveSettings(settings); // cache to local
         backendSuccess = true;
     } catch (e) {
-        console.warn('Using cached settings');
+        console.warn('[Router] Failed to load settings from backend, using cache.', e);
         settings = utils.getSettings();
+        console.log('[Router] Cached settings:', settings);
     }
     
     // Direct airport route check - bypass setup redirect
     if (hash.startsWith('/airport/')) {
         const parts = hash.split('/');
         const icao = parts[2];
+        console.log(`[Router] Direct airport route detected for: ${icao}`);
         currentIcao = icao;
         updateNavLinks(icao);
         
@@ -195,14 +218,14 @@ async function handleRoute() {
     // Check for first-run
     // Show setup if no default airport is configured
     if (!settings.default_airport && hash !== '/settings' && hash !== '/search') {
-        console.log("Showing first-run setup: no default airport");
+        console.log("[Router] No default airport set and not on a bypass route. Showing setup.");
         stopRefreshTimer();
         renderFirstRun(content);
         return;
     }
 
     if (hash === '/') {
-        console.log(`Routing to dashboard: ${settings.default_airport}`);
+        console.log(`[Router] Root route. Redirecting to default dashboard: "${settings.default_airport}"`);
         window.location.hash = `/airport/${settings.default_airport}`;
         return;
     }
@@ -342,6 +365,7 @@ function renderSearch(container) {
 }
 
 function renderFirstRun(container) {
+    console.log("Rendering first-run setup page");
     container.innerHTML = `
         <div class="home-container">
             <h1>Welcome to AirfieldOps</h1>
@@ -350,7 +374,7 @@ function renderFirstRun(container) {
                 <input type="text" id="setup-search" placeholder="Enter Airport ICAO or Name (e.g. KAGC)" autocomplete="off">
                 <button id="setup-save-btn" disabled>Save and Start</button>
             </div>
-            <div id="setup-error" style="color: red; margin-top: 10px; display: none;"></div>
+            <div id="setup-error" style="color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-border); padding: 0.5rem; margin-top: 10px; display: none; border-radius: 4px;"></div>
             <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;">
                 This can be changed later in Settings.
             </p>
@@ -362,43 +386,67 @@ function renderFirstRun(container) {
     const errorEl = document.getElementById('setup-error');
     setupAutocomplete(input);
 
-    input.addEventListener('input', () => {
-        btn.disabled = input.value.trim().length < 3;
+    const validateAndEnable = () => {
+        const val = input.value.trim().toUpperCase();
+        console.log(`Setup input changed: "${val}"`);
+        // Enable if it looks like a 4-char ICAO or if it's longer (name search)
+        if (val.length >= 3) {
+            btn.disabled = false;
+        } else {
+            btn.disabled = true;
+        }
         errorEl.style.display = 'none';
-    });
+    };
+
+    input.addEventListener('input', validateAndEnable);
 
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !btn.disabled) {
+            console.log("Enter key pressed in setup input");
             btn.click();
         }
     });
 
     btn.addEventListener('click', async () => {
         const icao = input.value.trim().toUpperCase();
+        console.log(`Save and Start clicked for: "${icao}"`);
+        btn.disabled = true;
+        btn.innerText = "Saving...";
+        
         try {
             // Validate airport exists
+            console.log(`Validating airport ${icao}...`);
             await api.getDirectory(icao);
             
-            const defaults = {
-                default_airport: icao,
-                alternate_radius_nm: 75,
-                refresh_interval_seconds: 300
+            const settings = utils.getSettings();
+            const newSettings = {
+                ...settings,
+                default_airport: icao
             };
             
             // Save to backend
-            await api.updateSettings(defaults);
+            console.log(`Calling PUT /api/settings with default_airport: ${icao}`);
+            await api.updateSettings(newSettings);
             
             // Confirm from backend
+            console.log(`Confirming save via GET /api/settings...`);
             const updated = await api.getSettings();
+            console.log(`Backend settings confirmation:`, updated);
+            
             if (updated.default_airport !== icao) {
-                throw new Error("Backend confirmation failed");
+                console.error(`Save mismatch! Expected ${icao}, got ${updated.default_airport}`);
+                throw new Error("Backend confirmation failed. The setting did not persist.");
             }
             
+            console.log(`Confirmed! Saving to localStorage and routing to ${icao}`);
             utils.saveSettings(updated);
             navigateToAirport(icao);
         } catch (e) {
-            errorEl.innerText = `Failed to save ${icao}. Verify it is a valid airport.`;
+            console.error("Setup save failed:", e);
+            errorEl.innerText = `Failed to save ${icao}. ${e.message || 'Verify it is a valid airport.'}`;
             errorEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerText = "Save and Start";
         }
     });
 }
@@ -414,7 +462,7 @@ async function renderDashboard(container, icao) {
                 <h1>${icao} - ${dir.name}</h1>
                 <div style="font-size: 0.9rem; color: var(--text-muted);">Dashboard Snapshot • ${utils.formatDate(new Date())}</div>
             </div>
-            <button id="dashboard-set-default" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Set as Default</button>
+            <button id="dashboard-set-default" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Use ${icao} as Default</button>
         </div>
         <div id="dashboard-set-default-msg" style="text-align: right; color: var(--success); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 1rem; display: none;">Saved!</div>
         <div class="grid">
@@ -429,17 +477,32 @@ async function renderDashboard(container, icao) {
     `;
 
     document.getElementById('dashboard-set-default').addEventListener('click', async () => {
+        const btn = document.getElementById('dashboard-set-default');
+        const msgEl = document.getElementById('dashboard-set-default-msg');
+        btn.disabled = true;
+        btn.innerText = "Saving...";
+        
         try {
             const settings = utils.getSettings();
             const newSettings = { ...settings, default_airport: icao };
+            console.log(`Setting ${icao} as default via dashboard button...`);
             await api.updateSettings(newSettings);
+            
             const updated = await api.getSettings();
+            if (updated.default_airport !== icao) {
+                throw new Error("Backend confirmation failed");
+            }
+            
             utils.saveSettings(updated);
-            const msgEl = document.getElementById('dashboard-set-default-msg');
+            msgEl.innerText = "Default airport saved!";
             msgEl.style.display = 'block';
             setTimeout(() => { msgEl.style.display = 'none'; }, 3000);
         } catch (e) {
+            console.error("Dashboard set-default failed:", e);
             alert('Failed to save default airport.');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Set as Default";
         }
     });
 }
@@ -448,8 +511,7 @@ async function renderFullBrief(container, icao) {
     const data = await api.getBrief(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Operational Brief: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Brief</h1>
         </div>
         <div class="card" style="max-width: 800px; margin: 0 auto;">
             <h2>Airport Snapshot</h2>
@@ -523,15 +585,14 @@ async function renderDetailedWeather(container, icao) {
     const data = await api.getWeather(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Detailed Weather: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Weather</h1>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="grid">
             <div class="card">
                 <h2>Current Observation (METAR)</h2>
                 ${data.metar ? `
-                    <code style="display: block; background: var(--code-bg); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.metar.raw}</code>
+                    <code style="display: block; background: var(--code-bg); color: var(--code-text); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.metar.raw}</code>
                     <table class="table-container">
                         <tr><th>Flight Category</th><td>${utils.getFlightCategoryChip(data.metar.flight_category)}</td></tr>
                         <tr><th>Wind</th><td>${utils.formatWind(data.metar.wind)}</td></tr>
@@ -547,13 +608,13 @@ async function renderDetailedWeather(container, icao) {
             <div class="card">
                 <h2>Forecast (TAF)</h2>
                 ${data.taf ? `
-                    <code style="display: block; background: var(--code-bg); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.taf.raw}</code>
+                    <code style="display: block; background: var(--code-bg); color: var(--code-text); padding: 1rem; border-radius: 4px; margin-bottom: 1.5rem;">${data.taf.raw}</code>
                     <p><strong>Issued:</strong> ${utils.formatDate(data.taf.issued_at)}</p>
                     <p><strong>Valid:</strong> ${utils.formatDate(data.taf.valid_from)} to ${utils.formatDate(data.taf.valid_to)}</p>
                     <h3>Periods</h3>
                     <div style="font-size: 0.85rem;">
                         ${data.taf.forecast_periods.map(p => `
-                            <div style="border-bottom: 1px solid #eee; padding: 0.5rem 0;">
+                            <div style="border-bottom: 1px solid var(--border-color); padding: 0.5rem 0;">
                                 <strong>${utils.formatDate(p.fcst_from)}:</strong> ${p.rawFcst || 'N/A'}
                             </div>
                         `).join('')}
@@ -568,13 +629,12 @@ async function renderDetailedRunways(container, icao) {
     const data = await api.getRunways(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Runway Intelligence: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Runways</h1>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="card">
             <h2>Wind Analysis</h2>
-            <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--light); border-radius: 8px;">
+            <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--card-bg-alt); border: 1px solid var(--border-color); border-radius: 8px;">
                 <strong>Favored Runway: ${data.favored_runway.id || 'None'}</strong>
                 <p style="margin: 0.5rem 0 0 0;">Reason: ${data.favored_runway.reason}</p>
             </div>
@@ -633,13 +693,12 @@ async function renderDetailedRunways(container, icao) {
 
 async function renderDetailedAlternates(container, icao) {
     const settings = utils.getSettings();
-    const data = await api.getAlternates(icao, settings.alternate_radius);
+    const data = await api.getAlternates(icao, settings.alternate_radius_nm);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Ranked Alternates: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Alternates</h1>
         </div>
-        <p style="margin-bottom: 1rem; font-style: italic;">Showing airports within ${settings.alternate_radius} nm radius.</p>
+        <p style="margin-bottom: 1rem; font-style: italic;">Showing airports within ${settings.alternate_radius_nm} nm radius.</p>
         <div class="card">
             <div class="table-container">
                 <table>
@@ -681,26 +740,25 @@ async function renderDetailedHazards(container, icao) {
     const data = await api.getHazards(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Weather Hazards & Alerts: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Hazards</h1>
         </div>
         ${utils.renderWarnings(data.warnings)}
         <div class="card" style="margin-bottom: 2rem;">
             <h2>Regional Risk Level: ${utils.getRiskLevelChip(data.risk_level)}</h2>
             <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 1rem;">
-                <div class="card" style="background: var(--light); box-shadow: none;">
+                <div class="card" style="background: var(--card-bg-alt); box-shadow: none; border: 1px solid var(--border-color);">
                     <strong>NWS Alerts</strong>
                     <div style="font-size: 2rem;">${data.counts.nws_alerts}</div>
                 </div>
-                <div class="card" style="background: var(--light); box-shadow: none;">
+                <div class="card" style="background: var(--card-bg-alt); box-shadow: none; border: 1px solid var(--border-color);">
                     <strong>SIGMETs</strong>
                     <div style="font-size: 2rem;">${data.counts.sigmets}</div>
                 </div>
-                <div class="card" style="background: var(--light); box-shadow: none;">
+                <div class="card" style="background: var(--card-bg-alt); box-shadow: none; border: 1px solid var(--border-color);">
                     <strong>G-AIRMETs</strong>
                     <div style="font-size: 2rem;">${data.counts.gairmets}</div>
                 </div>
-                <div class="card" style="background: var(--light); box-shadow: none;">
+                <div class="card" style="background: var(--card-bg-alt); box-shadow: none; border: 1px solid var(--border-color);">
                     <strong>CWAs</strong>
                     <div style="font-size: 2rem;">${data.counts.cwas}</div>
                 </div>
@@ -746,18 +804,20 @@ async function renderDetailedDirectory(container, icao) {
     const data = await api.getDirectory(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>Airport Directory: ${icao}</h1>
-            <a href="#/airport/${icao}">← Return to Dashboard</a>
+            <h1>${icao} Directory</h1>
         </div>
         <div class="grid">
             <div class="card">
                 <h2>General Information</h2>
                 <table>
-                    <tr><th>Name</th><td>${data.name}</td></tr>
-                    <tr><th>ICAO</th><td>${data.icao}</td></tr>
-                    <tr><th>Elevation</th><td>${data.elevation_ft} FT</td></tr>
-                    <tr><th>Latitude</th><td>${data.lat.toFixed(6)}</td></tr>
-                    <tr><th>Longitude</th><td>${data.lon.toFixed(6)}</td></tr>
+                    <thead><tr><th>Field</th><th>Value</th></tr></thead>
+                    <tbody>
+                        <tr><td><strong>Name</strong></td><td>${data.name}</td></tr>
+                        <tr><td><strong>ICAO</strong></td><td>${data.icao}</td></tr>
+                        <tr><td><strong>Elevation</strong></td><td>${data.elevation_ft} FT</td></tr>
+                        <tr><td><strong>Latitude</strong></td><td>${data.lat.toFixed(6)}</td></tr>
+                        <tr><td><strong>Longitude</strong></td><td>${data.lon.toFixed(6)}</td></tr>
+                    </tbody>
                 </table>
             </div>
             <div class="card">
@@ -779,8 +839,7 @@ async function renderSettings(container) {
     
     container.innerHTML = `
         <div class="page-header">
-            <h1>App Settings</h1>
-            <a href="#/">← Return to Dashboard</a>
+            <h1>Settings</h1>
         </div>
         
         <div class="grid">
@@ -792,16 +851,16 @@ async function renderSettings(container) {
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Default Airport (ICAO)</label>
                     <small style="display: block; color: var(--text-muted); margin-bottom: 0.5rem;">The dashboard that loads when you first open the app.</small>
-                    <input type="text" id="set-default-apt" value="${settings.default_airport}" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                    <input type="text" id="set-default-apt" value="${settings.default_airport}" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Alternate Search Radius (NM)</label>
-                    <input type="number" id="set-radius" value="${settings.alternate_radius}" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                    <input type="number" id="set-radius" value="${settings.alternate_radius_nm}" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px;">
                 </div>
                 <div style="margin-bottom: 2rem;">
                     <label style="display: block; margin-bottom: 0.25rem; font-weight: bold;">Refresh Interval (Seconds)</label>
                     <small style="display: block; color: var(--text-muted); margin-bottom: 0.5rem;">Automatically refreshes the current dashboard/page while the tab is visible (min: 30s).</small>
-                    <input type="number" id="set-refresh" value="${settings.refresh_interval}" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                    <input type="number" id="set-refresh" value="${settings.refresh_interval_seconds}" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px;">
                 </div>
                 
                 ${currentIcao ? `
@@ -840,28 +899,41 @@ async function renderSettings(container) {
     document.getElementById('save-settings-btn').addEventListener('click', async () => {
         const msgEl = document.getElementById('settings-msg');
         const icao = document.getElementById('set-default-apt').value.trim().toUpperCase();
+        const btn = document.getElementById('save-settings-btn');
         
-        msgEl.style.color = 'var(--gray)';
+        msgEl.style.color = 'var(--text-muted)';
         msgEl.innerText = 'Validating airport...';
+        btn.disabled = true;
 
         try {
             // Validate airport exists
             await api.getDirectory(icao);
             
+            const currentSettings = await api.getSettings();
             const newSettings = {
+                ...currentSettings,
                 default_airport: icao,
-                alternate_radius: Math.max(1, parseInt(document.getElementById('set-radius').value)),
-                refresh_interval: Math.max(30, parseInt(document.getElementById('set-refresh').value))
+                alternate_radius_nm: Math.max(1, parseInt(document.getElementById('set-radius').value)),
+                refresh_interval_seconds: Math.max(30, parseInt(document.getElementById('set-refresh').value))
             };
-            utils.saveSettings(newSettings);
+            
+            // Save to backend
+            console.log(`[Settings] Saving to backend:`, newSettings);
+            const saved = await api.updateSettings(newSettings);
+            
+            // Sync to local
+            utils.saveSettings(saved);
             
             msgEl.style.color = 'var(--success)';
             msgEl.innerHTML = `Settings saved! <a href="#/airport/${icao}" style="color: var(--accent);">Go to ${icao} Dashboard</a>`;
         } catch (e) {
             msgEl.style.color = 'var(--danger)';
-            msgEl.innerText = `Error: Airport ${icao} not found in reference data.`;
+            msgEl.innerText = `Error: ${e.message || 'Airport not found.'}`;
+        } finally {
+            btn.disabled = false;
         }
     });
+
 
     if (currentIcao) {
         document.getElementById('set-current-default-btn').addEventListener('click', () => {

@@ -71,7 +71,19 @@ def get_airport_runways(icao: str):
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT surface_id as id, le_heading_deg as heading, length_ft, width_ft FROM runways WHERE airport_ident = ?", (icao,))
+            cursor.execute("""
+                SELECT 
+                    surface_id as id, 
+                    le_heading_deg as heading, 
+                    length_ft, 
+                    width_ft,
+                    le_latitude_deg,
+                    le_longitude_deg,
+                    he_latitude_deg,
+                    he_longitude_deg
+                FROM runways 
+                WHERE airport_ident = ?
+            """, (icao,))
             return [dict(row) for row in cursor.fetchall()]
     except sqlite3.OperationalError:
         logger.warning("SQLite DB unavailable, falling back to JSON for runways")
