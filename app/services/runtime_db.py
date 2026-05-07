@@ -169,6 +169,14 @@ def seed_reference_data_from_json(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()
     data_dir = Path(__file__).parent.parent / "data"
     
+    # Check if we have already imported from an external source
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM schema_meta WHERE key = 'ref_data_source'")
+    row = cursor.fetchone()
+    if row and row[0] == "OurAirports":
+        logger.info("Database has been imported from OurAirports. Skipping JSON seed to prevent data downgrade.")
+        return
+
     # Simple versioning for reference data
     REF_DATA_VERSION = "1.1.0"
     

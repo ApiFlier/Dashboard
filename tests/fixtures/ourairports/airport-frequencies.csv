@@ -1,0 +1,3 @@
+id,airport_ref,airport_ident,type,description,frequency_mhz
+1,1,KAVP,TWR,Tower,120.1
+2,2,KTEST,CTAF,CTAF,122.8

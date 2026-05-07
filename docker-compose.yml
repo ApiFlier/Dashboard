@@ -7,6 +7,12 @@ services:
       - "8080:8080"
     volumes:
       - .:/app
+      - airfieldops_state:/var/lib/airfieldops
     environment:
       - ENVIRONMENT=development
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+
+volumes:
+  airfieldops_state:
+    name: airfieldops_state
+    external: true

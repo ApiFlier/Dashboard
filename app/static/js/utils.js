@@ -48,21 +48,35 @@ const utils = {
     },
 
     getRecentAirports() {
-        // We now use the API for recent airports, but keep this for legacy fallback 
-        // until fully transitioned. Actually let's just use it as a cache.
         const recent = localStorage.getItem('recent_airports');
         return recent ? JSON.parse(recent) : [];
     },
 
     addRecentAirport(icao) {
-        // Sync to localStorage for fast lookup
         let recent = this.getRecentAirports();
         recent = recent.filter(a => a !== icao);
         recent.unshift(icao);
-        recent = recent.slice(0, 5);
+        recent = recent.slice(0, 10);
         localStorage.setItem('recent_airports', JSON.stringify(recent));
-        
-        // Backend sync happens in app.js
+    },
+
+    getFavorites() {
+        const favs = localStorage.getItem('favorites');
+        return favs ? JSON.parse(favs) : [];
+    },
+
+    addFavorite(icao) {
+        let favs = this.getFavorites();
+        if (!favs.includes(icao)) {
+            favs.push(icao);
+            localStorage.setItem('favorites', JSON.stringify(favs));
+        }
+    },
+
+    removeFavorite(icao) {
+        let favs = this.getFavorites();
+        favs = favs.filter(a => a !== icao);
+        localStorage.setItem('favorites', JSON.stringify(favs));
     },
 
     getSettings() {
@@ -72,14 +86,38 @@ const utils = {
             refresh_interval_seconds: 300,
             theme_mode: 'system',
             monitor_mode: false,
-            accent_color: 'blue'
+            accent_color: 'blue',
+            public_readonly_mode: true
         };
-        const saved = localStorage.getItem('app_settings');
-        return saved ? { ...defaults, ...JSON.parse(saved) } : defaults;
+        
+        // 1. Get backend settings (cached in localStorage)
+        const savedBackend = localStorage.getItem('app_settings');
+        const backendSettings = savedBackend ? JSON.parse(savedBackend) : {};
+        
+        // 2. Get local overrides (only applied if public_readonly_mode is true)
+        const savedLocal = localStorage.getItem('local_settings');
+        const localSettings = savedLocal ? JSON.parse(savedLocal) : {};
+        
+        const isPublic = backendSettings.public_readonly_mode !== false; // Default to true if unknown
+        
+        if (isPublic) {
+            // Merge: local overrides take precedence over backend defaults
+            return { ...defaults, ...backendSettings, ...localSettings };
+        } else {
+            // Local/private mode: backend settings are authoritative
+            return { ...defaults, ...backendSettings };
+        }
     },
 
     saveSettings(settings) {
+        // This caches backend settings
         localStorage.setItem('app_settings', JSON.stringify(settings));
+        this.applyTheme(settings.theme_mode);
+    },
+
+    saveLocalSettings(settings) {
+        // This saves user's browser-specific overrides
+        localStorage.setItem('local_settings', JSON.stringify(settings));
         this.applyTheme(settings.theme_mode);
     },
 

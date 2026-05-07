@@ -15,6 +15,7 @@ class UserSettings(BaseModel):
     accent_color: str = "blue"
     updated_at: Optional[str] = None
     source: str = "database"
+    public_readonly_mode: bool = True
 
 class FavoriteAirport(BaseModel):
     ident: str

@@ -6,6 +6,7 @@ from app.services.runtime_db import get_connection
 from app.models.common import UserSettings
 from app.services.airport_data import get_airport_directory
 from app.api.auth import verify_admin_token
+from app.core.config import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,12 +35,12 @@ async def get_settings():
                     last_updated = row["updated_at"]
             
             if not data:
-                return UserSettings(source="default")
+                return UserSettings(source="default", public_readonly_mode=settings.PUBLIC_READONLY_MODE)
                 
-            return UserSettings(**data, updated_at=last_updated)
+            return UserSettings(**data, updated_at=last_updated, public_readonly_mode=settings.PUBLIC_READONLY_MODE)
     except Exception as e:
         logger.error(f"Error fetching settings: {e}")
-        return UserSettings(source="fallback")
+        return UserSettings(source="fallback", public_readonly_mode=settings.PUBLIC_READONLY_MODE)
 
 @router.put("/settings", response_model=UserSettings, dependencies=[Depends(verify_admin_token)])
 async def update_settings(new_settings: UserSettings):

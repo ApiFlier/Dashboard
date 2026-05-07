@@ -52,15 +52,55 @@ Once deployed in production, the running container no longer relies on the local
 To restore from a backup, use `restore.sh`. It safely creates a pre-restore backup and requires typed confirmation before overwriting your runtime state.
 
 ### Data Model
-- **Reference Data:** Shipped with the app (e.g., airport data). Seeded into the SQLite runtime database on first run.
+- **Reference Data:**
+  - **Curated Seed:** Hand-verified data for core airports (e.g., KAVP, KAGC) including precise runway threshold coordinates for accurate layouts.
+  - **Bulk Import:** Public-domain community data from [OurAirports](https://ourairports.com/data/). Provides broad coverage for thousands of airports, runways, and frequencies.
+- **Data Integrity:** Seeded into the SQLite runtime database on first run. Bulk imports can be triggered manually. Curated data is preserved during imports unless superior geometry is found.
 - **Live Data:** Fetched fresh from APIs. Weather cache is disposable. Source data may be missing, partially unavailable, or stale. The app is designed to degrade gracefully and provide warnings when data is missing.
 - **Persistent State:** Config, history, and the SQLite runtime database (`airfieldops.sqlite`) are stored in the persistent Docker volume at `/var/lib/airfieldops`.
 
+### Reference Data Management
+
+The project uses [OurAirports](https://ourairports.com/data/) as the primary source for global airport and runway data.
+
+#### Refreshing Reference Data
+
+To refresh the dataset (e.g., to get latest FAA/global updates):
+
+1.  **Dry Run First:**
+    ```bash
+    ./refresh_reference_data.sh --dry-run
+    ```
+    This will download (if requested), parse, and validate the data without modifying your database. Review the generated report in `reports/reference_import_YYYYMMDD_HHMMSS.json`.
+
+2.  **Execute Refresh:**
+    ```bash
+    ./refresh_reference_data.sh
+    ```
+    This script automatically:
+    - Creates a backup in `backups/`.
+    - Imports the data while preserving curated geometry for airports like KAVP and KAGC.
+    - Runs validation checks.
+    - Reports before/after counts.
+
+#### Rollback
+
+If an import results in bad data:
+
+1.  Identify the latest good backup in `backups/`.
+2.  Run the restore script:
+    ```bash
+    ./restore.sh backups/backup_YYYYMMDD_HHMMSS.tar.gz
+    ```
+
+**Warning:** Do not run `docker compose down -v` unless you intend to permanently wipe all reference data and settings.
+
 ### Public Deployment
+...
 
 When exposing AirfieldOps Core publicly, ensure the following safety measures:
 
-1. **Read-Only Mode:** Set `PUBLIC_READONLY_MODE=true` (default) in your environment. This will block all mutating endpoints (settings, favorites, recent history) unless a valid `X-Admin-Token` is provided.
+1. **Read-Only Mode:** Set `PUBLIC_READONLY_MODE=true` (default) in your environment. This will block all mutating endpoints (settings, favorites, recent history) unless a valid `X-Admin-Token` is provided. In this mode, user preferences (default airport, recent search history) are stored in the user's browser `localStorage` instead of the backend database.
 2. **Admin Token:** Configure a strong `ADMIN_API_TOKEN`. If this is not set while in read-only mode, all mutations will be permanently blocked for safety.
 3. **Debug Endpoints:** Ensure `DEBUG_PUBLIC_ENDPOINTS=false` (default) to hide internal debugging information.
 4. **User-Agent:** Set `AIRFIELDOPS_USER_AGENT` to identify your instance to AviationWeather and NWS servers.
