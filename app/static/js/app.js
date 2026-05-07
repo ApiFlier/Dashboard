@@ -1,6 +1,8 @@
 let refreshTimer = null;
 let currentIcao = null;
 let isRefreshing = false;
+let settingsLoaded = false;
+const DEBUG = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -41,7 +43,7 @@ function initApp() {
     setupAutocomplete(searchInput);
 
     refreshBtn.addEventListener('click', () => {
-        refreshCurrentView();
+        refreshCurrentView(true); // Manual refresh
     });
 
     window.addEventListener('hashchange', handleRoute);
@@ -51,7 +53,10 @@ function initApp() {
         if (document.hidden) {
             stopRefreshTimer();
         } else {
-            startRefreshTimer();
+            const hash = window.location.hash.substring(1) || '/';
+            if (hash.startsWith('/airport/')) {
+                startRefreshTimer();
+            }
         }
     });
 
@@ -114,11 +119,40 @@ function setupAutocomplete(input) {
 
 function startRefreshTimer() {
     stopRefreshTimer();
-    // Temporarily disabled for stability
+    
+    const settings = utils.getSettings();
+    if (!settings.refresh_interval_seconds) return;
+
+    const refreshSeconds = Math.max(30, Math.min(3600, settings.refresh_interval_seconds));
+    const intervalMs = refreshSeconds * 1000;
+
+    if (DEBUG) console.log(`[Timer] Starting auto-refresh timer: ${refreshSeconds}s`);
+
+    refreshTimer = setInterval(() => {
+        const hash = window.location.hash.substring(1) || '/';
+        if (!hash.startsWith('/airport/')) {
+            stopRefreshTimer();
+            return;
+        }
+
+        if (document.hidden) {
+            if (DEBUG) console.log('[Timer] Tab hidden, skipping tick');
+            return;
+        }
+
+        if (isRefreshing) {
+            if (DEBUG) console.log('[Timer] Already refreshing, skipping tick');
+            return;
+        }
+
+        if (DEBUG) console.log('[Timer] Auto-refresh tick');
+        refreshCurrentView(false);
+    }, intervalMs);
 }
 
 function stopRefreshTimer() {
     if (refreshTimer) {
+        if (DEBUG) console.log('[Timer] Stopping auto-refresh timer');
         clearInterval(refreshTimer);
         refreshTimer = null;
     }
@@ -175,57 +209,54 @@ function updateNavLinks(icao) {
 
 async function handleRoute() {
     const hash = window.location.hash.substring(1) || '/';
-    console.log(`[Router] Handling route: "${hash}"`);
+    if (DEBUG) console.log(`[Router] Handling route: "${hash}"`);
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
     
-    // 1. Sync settings from backend
-    let settings;
-    let backendSuccess = false;
-    try {
-        console.log("[Router] Fetching latest settings from backend...");
-        settings = await api.getSettings();
-        console.log('[Router] Settings loaded from backend:', settings);
-        
-        if (settings.default_airport) {
-            console.log(`[Router] default_airport found in backend settings: "${settings.default_airport}"`);
-        } else {
-            console.log("[Router] backend default_airport is empty.");
+    // 1. Sync settings from backend only if not loaded yet or on settings page
+    let settings = utils.getSettings();
+    
+    if (!settingsLoaded || hash === '/settings') {
+        try {
+            if (DEBUG) console.log("[Router] Fetching latest settings from backend...");
+            settings = await api.getSettings();
+            if (DEBUG) console.log('[Router] Settings loaded from backend:', settings);
+            
+            utils.saveSettings(settings); // cache to local
+            settingsLoaded = true;
+        } catch (e) {
+            console.warn('[Router] Failed to load settings from backend, using cache.', e);
         }
-        
-        utils.saveSettings(settings); // cache to local
-        backendSuccess = true;
-    } catch (e) {
-        console.warn('[Router] Failed to load settings from backend, using cache.', e);
-        settings = utils.getSettings();
-        console.log('[Router] Cached settings:', settings);
     }
     
     // Direct airport route check - bypass setup redirect
     if (hash.startsWith('/airport/')) {
         const parts = hash.split('/');
         const icao = parts[2];
-        console.log(`[Router] Direct airport route detected for: ${icao}`);
+        if (DEBUG) console.log(`[Router] Direct airport route detected for: ${icao}`);
         currentIcao = icao;
         updateNavLinks(icao);
         
-        content.innerHTML = '<div class="loading">Loading airport data...</div>';
+        // Only show loading if we are changing airports or it's first load
+        if (content.innerHTML === '' || content.querySelector('.loading') || !content.innerHTML.includes(icao)) {
+             content.innerHTML = '<div class="loading">Loading airport data...</div>';
+        }
         
-        await refreshCurrentView();
+        await refreshCurrentView(false);
         return;
     }
 
     // Check for first-run
     // Show setup if no default airport is configured
     if (!settings.default_airport && hash !== '/settings' && hash !== '/search') {
-        console.log("[Router] No default airport set and not on a bypass route. Showing setup.");
+        if (DEBUG) console.log("[Router] No default airport set and not on a bypass route. Showing setup.");
         stopRefreshTimer();
         renderFirstRun(content);
         return;
     }
 
     if (hash === '/') {
-        console.log(`[Router] Root route. Redirecting to default dashboard: "${settings.default_airport}"`);
+        if (DEBUG) console.log(`[Router] Root route. Redirecting to default dashboard: "${settings.default_airport}"`);
         window.location.hash = `/airport/${settings.default_airport}`;
         return;
     }
@@ -249,11 +280,14 @@ async function handleRoute() {
     }
 }
 
-async function refreshCurrentView() {
+async function refreshCurrentView(isManual = false) {
     if (isRefreshing) return;
     
     const hash = window.location.hash.substring(1) || '/';
-    if (!hash.startsWith('/airport/')) return;
+    if (!hash.startsWith('/airport/')) {
+        stopRefreshTimer();
+        return;
+    }
     
     const parts = hash.split('/');
     const icao = parts[2];
@@ -285,44 +319,64 @@ async function refreshCurrentView() {
         lastUpdatedEl.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
         statusBar.style.display = 'flex';
         
-        // Re-start timer for this page
-        startRefreshTimer();
+        // Re-start timer for this page if not already running
+        if (!refreshTimer) {
+            startRefreshTimer();
+        }
 
     } catch (e) {
-        console.error(e);
-        stopRefreshTimer();
-        statusBar.style.display = 'none';
+        console.error('Refresh failed:', e);
         
-        if (e.status === 404) {
-            content.innerHTML = `
-                <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
-                    <h2>Airport Not Found</h2>
-                    <p>The airport <strong>${icao}</strong> was not found in our database.</p>
-                    <p style="font-size: 0.9rem; color: var(--text-muted);">Please verify the ICAO code and try again.</p>
-                    <br>
-                    <button onclick="window.location.hash = '/search'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Search</button>
-                </div>
-            `;
-        } else {
-            content.innerHTML = `
-                <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
-                    <h2>Unable to load airport data</h2>
-                    <p>Something went wrong while fetching data for <strong>${icao}</strong>.</p>
-                    <div style="background: var(--danger-bg); color: var(--danger-text); padding: 1rem; border-radius: 4px; text-align: left; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--danger-border);">
-                        <strong>Technical Details:</strong><br>
-                        Status: ${e.status || 'Network Error'}<br>
-                        Endpoint: ${e.url || 'N/A'}<br>
-                        Message: ${e.message || 'Unknown failure'}
+        // If it's the initial load (not manual or auto-tick), show error page
+        // But if it's a background refresh, just show a warning callout
+        if (content.querySelector('.loading')) {
+            if (e.status === 404) {
+                content.innerHTML = `
+                    <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+                        <h2>Airport Not Found</h2>
+                        <p>The airport <strong>${icao}</strong> was not found in our database.</p>
+                        <p style="font-size: 0.9rem; color: var(--text-muted);">Please verify the ICAO code and try again.</p>
+                        <br>
+                        <button onclick="window.location.hash = '/search'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Search</button>
                     </div>
-                    <br>
-                    <button onclick="window.location.hash = '/'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Dashboard</button>
-                </div>
-            `;
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
+                        <h2>Unable to load airport data</h2>
+                        <p>Something went wrong while fetching data for <strong>${icao}</strong>.</p>
+                        <div style="background: var(--danger-bg); color: var(--danger-text); padding: 1rem; border-radius: 4px; text-align: left; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; border: 1px solid var(--danger-border);">
+                            <strong>Technical Details:</strong><br>
+                            Status: ${e.status || 'Network Error'}<br>
+                            Endpoint: ${e.url || 'N/A'}<br>
+                            Message: ${e.message || 'Unknown failure'}
+                        </div>
+                        <br>
+                        <button onclick="window.location.hash = '/'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Dashboard</button>
+                    </div>
+                `;
+            }
+            statusBar.style.display = 'none';
+            stopRefreshTimer();
+        } else {
+            // Keep old data, but show error in status bar or as callout
+            const errorMsg = document.createElement('div');
+            errorMsg.className = 'warning-callout';
+            errorMsg.style.marginTop = '1rem';
+            errorMsg.innerHTML = `⚠️ Refresh failed at ${new Date().toLocaleTimeString()}. Using cached data.`;
+            
+            // Only add if not already there
+            if (!content.querySelector('.refresh-error')) {
+                errorMsg.classList.add('refresh-error');
+                content.prepend(errorMsg);
+                setTimeout(() => errorMsg.remove(), 5000);
+            }
         }
     } finally {
         isRefreshing = false;
     }
 }
+
 
 function renderSearch(container) {
     const recent = utils.getRecentAirports();

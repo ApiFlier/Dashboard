@@ -1,10 +1,11 @@
 import sqlite3
 import logging
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.services.runtime_db import get_connection
 from app.models.common import UserSettings
 from app.services.airport_data import get_airport_directory
+from app.api.auth import verify_admin_token
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ async def get_settings():
         logger.error(f"Error fetching settings: {e}")
         return UserSettings(source="fallback")
 
-@router.put("/settings", response_model=UserSettings)
+@router.put("/settings", response_model=UserSettings, dependencies=[Depends(verify_admin_token)])
 async def update_settings(new_settings: UserSettings):
     # 1. Validate airport if provided
     if new_settings.default_airport:

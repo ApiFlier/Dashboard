@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +18,22 @@ async def lifespan(app: FastAPI):
     # Cleanup on shutdown if needed
 
 app = FastAPI(title="AirfieldOps Core", description=ADVISORY_DISCLAIMER, lifespan=lifespan)
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    # Basic CSP: allow self, and common aviation data sources
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: https://*.faa.gov https://*.weather.gov; "
+        "connect-src 'self' https://aviationweather.gov https://api.weather.gov;"
+    )
+    return response
 
 app.add_middleware(
     CORSMiddleware,

@@ -84,25 +84,26 @@ def test_get_settings(temp_db_with_settings):
 
 def test_put_settings(temp_db_with_settings):
     with mock.patch("app.core.config.settings.DB_PATH", temp_db_with_settings):
-        response = client.put(
-            "/api/settings",
-            json={
-                "default_airport": "KXYZ",
-                "alternate_radius_nm": 100,
-                "refresh_interval_seconds": 600,
-                "theme_mode": "light",
-                "monitor_mode": False,
-                "show_raw_weather_default": False,
-                "accent_color": "green"
-            }
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["theme_mode"] == "light"
-        assert data["monitor_mode"] is False
-        assert data["show_raw_weather_default"] is False
+        with mock.patch("app.core.config.settings.PUBLIC_READONLY_MODE", False):
+            response = client.put(
+                "/api/settings",
+                json={
+                    "default_airport": "KXYZ",
+                    "alternate_radius_nm": 100,
+                    "refresh_interval_seconds": 600,
+                    "theme_mode": "light",
+                    "monitor_mode": False,
+                    "show_raw_weather_default": False,
+                    "accent_color": "green"
+                }
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["theme_mode"] == "light"
+            assert data["monitor_mode"] is False
+            assert data["show_raw_weather_default"] is False
 
-        # Verify DB changed
-        get_response = client.get("/api/settings")
-        assert get_response.json()["theme_mode"] == "light"
-        assert get_response.json()["monitor_mode"] is False
+            # Verify DB changed
+            get_response = client.get("/api/settings")
+            assert get_response.json()["theme_mode"] == "light"
+            assert get_response.json()["monitor_mode"] is False

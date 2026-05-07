@@ -1,12 +1,21 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from app.core.config import settings
 from app.services.aviationweather_client import aw_client
 from app.api.routes.weather import parse_metar, parse_taf
 from app.core.cache import cache
 
 router = APIRouter()
 
+def verify_debug_access():
+    if not settings.DEBUG_PUBLIC_ENDPOINTS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Debug endpoints are disabled in this environment."
+        )
+
 @router.get("/weather/{airport}")
 async def debug_weather(airport: str):
+    verify_debug_access()
     airport = airport.upper()
     
     # Check cache status first

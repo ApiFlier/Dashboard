@@ -56,6 +56,21 @@ To restore from a backup, use `restore.sh`. It safely creates a pre-restore back
 - **Live Data:** Fetched fresh from APIs. Weather cache is disposable. Source data may be missing, partially unavailable, or stale. The app is designed to degrade gracefully and provide warnings when data is missing.
 - **Persistent State:** Config, history, and the SQLite runtime database (`airfieldops.sqlite`) are stored in the persistent Docker volume at `/var/lib/airfieldops`.
 
+### Public Deployment
+
+When exposing AirfieldOps Core publicly, ensure the following safety measures:
+
+1. **Read-Only Mode:** Set `PUBLIC_READONLY_MODE=true` (default) in your environment. This will block all mutating endpoints (settings, favorites, recent history) unless a valid `X-Admin-Token` is provided.
+2. **Admin Token:** Configure a strong `ADMIN_API_TOKEN`. If this is not set while in read-only mode, all mutations will be permanently blocked for safety.
+3. **Debug Endpoints:** Ensure `DEBUG_PUBLIC_ENDPOINTS=false` (default) to hide internal debugging information.
+4. **User-Agent:** Set `AIRFIELDOPS_USER_AGENT` to identify your instance to AviationWeather and NWS servers.
+5. **API Keys:** No API keys are currently required for AviationWeather or NWS usage.
+6. **Scripts:** Do not expose backup/restore scripts through web endpoints; they should remain CLI-only for security.
+7. **Auto-Refresh:** Keep `refresh_interval_seconds` at a conservative level (e.g., 300+) to avoid excessive API calls and potential rate limiting.
+8. **HTTPS:** Always serve the dashboard over HTTPS when exposed to the public internet.
+
+**Note:** This application is advisory-only. It is not for certified aviation, dispatch, or flight planning.
+
 ## Testing
 To run the test suite:
 ```bash

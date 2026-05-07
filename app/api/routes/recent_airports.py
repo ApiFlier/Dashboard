@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime, timezone
 from typing import List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.services.runtime_db import get_connection
 from app.models.common import RecentAirport
 from app.services.airport_data import get_airport_directory
+from app.api.auth import verify_admin_token
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ async def get_recent():
         logger.error(f"Error fetching recent: {e}")
         return []
 
-@router.post("/recent/{icao}")
+@router.post("/recent/{icao}", dependencies=[Depends(verify_admin_token)])
 async def add_recent(icao: str):
     icao = icao.upper()
     if not get_airport_directory(icao):
@@ -53,7 +54,7 @@ async def add_recent(icao: str):
         logger.error(f"Error adding recent: {e}")
         raise HTTPException(status_code=500, detail="Failed to add recent airport.")
 
-@router.delete("/recent/{icao}")
+@router.delete("/recent/{icao}", dependencies=[Depends(verify_admin_token)])
 async def delete_recent(icao: str):
     try:
         with get_connection() as conn:
@@ -63,7 +64,7 @@ async def delete_recent(icao: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to delete recent airport.")
 
-@router.delete("/recent")
+@router.delete("/recent", dependencies=[Depends(verify_admin_token)])
 async def clear_recent():
     try:
         with get_connection() as conn:
