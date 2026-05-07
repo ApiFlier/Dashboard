@@ -1,0 +1,220 @@
+import sqlite3
+import os
+import json
+import logging
+from pathlib import Path
+from datetime import datetime, timezone
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+SCHEMA_VERSION = 1
+
+def get_db_path() -> str:
+    return settings.DB_PATH
+
+def ensure_state_dir():
+    state_dir = Path(settings.STATE_DIR)
+    if not state_dir.exists():
+        logger.info(f"Creating state directory: {state_dir}")
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(get_db_path())
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def get_schema_version(conn: sqlite3.Connection) -> int:
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM schema_meta WHERE key = 'version'")
+        row = cursor.fetchone()
+        return int(row["value"]) if row else 0
+    except sqlite3.OperationalError:
+        return 0
+
+def set_schema_version(conn: sqlite3.Connection, version: int):
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, ?)",
+        ("version", str(version), now)
+    )
+
+def run_migrations(conn: sqlite3.Connection):
+    current_version = get_schema_version(conn)
+    if current_version < 1:
+        logger.info("Running schema migration to version 1")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS airports (
+                ident TEXT PRIMARY KEY,
+                name TEXT,
+                city TEXT,
+                state TEXT,
+                country TEXT,
+                lat REAL,
+                lon REAL,
+                elevation_ft INTEGER,
+                source TEXT,
+                updated_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS runways (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                surface_id TEXT,
+                le_ident TEXT,
+                he_ident TEXT,
+                le_heading_deg REAL,
+                he_heading_deg REAL,
+                length_ft INTEGER,
+                width_ft INTEGER,
+                surface TEXT,
+                lighted INTEGER,
+                closed INTEGER,
+                source TEXT,
+                updated_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS frequencies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                type TEXT,
+                description TEXT,
+                frequency_mhz REAL,
+                source TEXT,
+                updated_at TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS recent_airports (
+                ident TEXT PRIMARY KEY,
+                last_viewed_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS api_cache (
+                cache_key TEXT PRIMARY KEY,
+                source TEXT,
+                payload_json TEXT,
+                fetched_at TEXT,
+                expires_at TEXT
+            )
+        """)
+        set_schema_version(conn, 1)
+
+def seed_default_settings(conn: sqlite3.Connection):
+    now = datetime.now(timezone.utc).isoformat()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'default_airport'")
+    if not cursor.fetchone():
+        import os
+        default_airport = os.environ.get("DEFAULT_AIRPORT", "KAGC")
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            ("default_airport", default_airport, now)
+        )
+
+def seed_reference_data_from_json(conn: sqlite3.Connection):
+    now = datetime.now(timezone.utc).isoformat()
+    data_dir = Path(__file__).parent.parent / "data"
+    
+    # Simple versioning for reference data
+    REF_DATA_VERSION = "1.1.0"
+    
+    with open(data_dir / "airports_seed.json") as f:
+        airports = json.load(f)
+    
+    with open(data_dir / "runways_seed.json") as f:
+        runways = json.load(f)
+        
+    with open(data_dir / "frequencies_seed.json") as f:
+        frequencies = json.load(f)
+        
+    cursor = conn.cursor()
+    
+    logger.info(f"Seeding reference data version {REF_DATA_VERSION}...")
+
+    # 1. Seed Airports (Insert or Update if changed)
+    for apt in airports:
+        icao = apt["icao"]
+        cursor.execute("SELECT name, lat, lon, elevation_ft FROM airports WHERE ident = ?", (icao,))
+        existing = cursor.fetchone()
+        
+        if not existing:
+            conn.execute(
+                "INSERT INTO airports (ident, name, lat, lon, elevation_ft, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (icao, apt["name"], apt.get("lat"), apt.get("lon"), apt.get("elevation_ft"), "seed_json", now)
+            )
+        else:
+            # Update only if name or location changed significantly
+            if existing["name"] != apt["name"] or abs(existing["lat"] - apt["lat"]) > 0.0001 or abs(existing["lon"] - apt["lon"]) > 0.0001:
+                conn.execute(
+                    "UPDATE airports SET name = ?, lat = ?, lon = ?, elevation_ft = ?, updated_at = ? WHERE ident = ?",
+                    (apt["name"], apt["lat"], apt["lon"], apt.get("elevation_ft"), now, icao)
+                )
+
+    # 2. Seed Runways (Clear and re-seed for simplicity as they aren't user-editable)
+    # We only clear runways for airports present in our seed data to avoid wiping external data if any
+    seed_airport_idents = list(runways.keys())
+    placeholders = ",".join(["?"] * len(seed_airport_idents))
+    conn.execute(f"DELETE FROM runways WHERE airport_ident IN ({placeholders})", seed_airport_idents)
+    
+    for apt_id, rwys in runways.items():
+        for rwy in rwys:
+            conn.execute(
+                "INSERT INTO runways (airport_ident, surface_id, le_heading_deg, length_ft, width_ft, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (apt_id, rwy.get("id"), rwy.get("heading"), rwy.get("length_ft"), rwy.get("width_ft"), "seed_json", now)
+            )
+
+    # 3. Seed Frequencies (Clear and re-seed for simplicity)
+    seed_freq_idents = list(frequencies.keys())
+    placeholders = ",".join(["?"] * len(seed_freq_idents))
+    conn.execute(f"DELETE FROM frequencies WHERE airport_ident IN ({placeholders})", seed_freq_idents)
+    
+    for apt_id, freqs in frequencies.items():
+        for freq in freqs:
+            conn.execute(
+                "INSERT INTO frequencies (airport_ident, type, frequency_mhz, source, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (apt_id, freq.get("type"), freq.get("frequency"), "seed_json", now)
+            )
+
+    # Track reference data version and last seed time
+    conn.execute("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, ?)", ("ref_data_version", REF_DATA_VERSION, now))
+    conn.execute("INSERT OR REPLACE INTO schema_meta (key, value, updated_at) VALUES (?, ?, ?)", ("last_seeded_at", now, now))
+
+def ensure_reference_data_seeded():
+    """External helper to ensure reference data is populated without wiping settings."""
+    with get_connection() as conn:
+        seed_reference_data_from_json(conn)
+        conn.commit()
+
+def init_runtime_db_if_needed():
+    ensure_state_dir()
+    db_path = get_db_path()
+    is_new = not Path(db_path).exists()
+    
+    logger.info(f"Initializing runtime DB at {db_path}. New: {is_new}")
+    
+    with get_connection() as conn:
+        run_migrations(conn)
+        seed_reference_data_from_json(conn)
+        seed_default_settings(conn)
+        conn.commit()

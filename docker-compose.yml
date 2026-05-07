@@ -1,0 +1,12 @@
+# DEVELOPMENT ONLY - uses local bind mounts for live reloading
+services:
+  airfieldops:
+    build: .
+    container_name: airfieldops
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/app
+    environment:
+      - ENVIRONMENT=development
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload

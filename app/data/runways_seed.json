@@ -1,0 +1,110 @@
+{
+    "KAGC": [
+        {"id": "10", "heading": 100, "length_ft": 6501, "width_ft": 150},
+        {"id": "28", "heading": 280, "length_ft": 6501, "width_ft": 150},
+        {"id": "13", "heading": 130, "length_ft": 3825, "width_ft": 100},
+        {"id": "31", "heading": 310, "length_ft": 3825, "width_ft": 100}
+    ],
+    "KPIT": [
+        {"id": "10L", "heading": 100, "length_ft": 10501, "width_ft": 150},
+        {"id": "28R", "heading": 280, "length_ft": 10501, "width_ft": 150},
+        {"id": "10R", "heading": 100, "length_ft": 11500, "width_ft": 200},
+        {"id": "28L", "heading": 280, "length_ft": 11500, "width_ft": 200},
+        {"id": "14", "heading": 140, "length_ft": 8101, "width_ft": 150},
+        {"id": "32", "heading": 320, "length_ft": 8101, "width_ft": 150}
+    ],
+    "KBVI": [
+        {"id": "10", "heading": 100, "length_ft": 4501, "width_ft": 100},
+        {"id": "28", "heading": 280, "length_ft": 4501, "width_ft": 100}
+    ],
+    "KHLG": [
+        {"id": "03", "heading": 30, "length_ft": 5002, "width_ft": 150},
+        {"id": "21", "heading": 210, "length_ft": 5002, "width_ft": 150},
+        {"id": "16", "heading": 160, "length_ft": 4499, "width_ft": 150},
+        {"id": "34", "heading": 340, "length_ft": 4499, "width_ft": 150}
+    ],
+    "KLBE": [
+        {"id": "06", "heading": 60, "length_ft": 8222, "width_ft": 150},
+        {"id": "24", "heading": 240, "length_ft": 8222, "width_ft": 150}
+    ],
+    "KJST": [
+        {"id": "15", "heading": 150, "length_ft": 7004, "width_ft": 150},
+        {"id": "33", "heading": 330, "length_ft": 7004, "width_ft": 150},
+        {"id": "05", "heading": 50, "length_ft": 4387, "width_ft": 100},
+        {"id": "23", "heading": 230, "length_ft": 4387, "width_ft": 100}
+    ],
+    "KFKL": [
+        {"id": "03", "heading": 30, "length_ft": 5200, "width_ft": 150},
+        {"id": "21", "heading": 210, "length_ft": 5200, "width_ft": 150},
+        {"id": "12", "heading": 120, "length_ft": 3593, "width_ft": 100},
+        {"id": "30", "heading": 300, "length_ft": 3593, "width_ft": 100}
+    ],
+    "KDUJ": [
+        {"id": "07", "heading": 70, "length_ft": 5503, "width_ft": 100},
+        {"id": "25", "heading": 250, "length_ft": 5503, "width_ft": 100}
+    ],
+    "KERI": [
+        {"id": "06", "heading": 60, "length_ft": 8420, "width_ft": 150},
+        {"id": "24", "heading": 240, "length_ft": 8420, "width_ft": 150},
+        {"id": "02", "heading": 20, "length_ft": 3508, "width_ft": 150},
+        {"id": "20", "heading": 200, "length_ft": 3508, "width_ft": 150}
+    ],
+    "KBFD": [
+        {"id": "14", "heading": 140, "length_ft": 6307, "width_ft": 150},
+        {"id": "32", "heading": 320, "length_ft": 6307, "width_ft": 150},
+        {"id": "05", "heading": 50, "length_ft": 4499, "width_ft": 100},
+        {"id": "23", "heading": 230, "length_ft": 4499, "width_ft": 100}
+    ],
+    "KUNV": [
+        {"id": "06", "heading": 60, "length_ft": 6701, "width_ft": 150},
+        {"id": "24", "heading": 240, "length_ft": 6701, "width_ft": 150}
+    ],
+    "KIPT": [
+        {"id": "09", "heading": 90, "length_ft": 6825, "width_ft": 150},
+        {"id": "27", "heading": 270, "length_ft": 6825, "width_ft": 150},
+        {"id": "12", "heading": 120, "length_ft": 4273, "width_ft": 150},
+        {"id": "30", "heading": 300, "length_ft": 4273, "width_ft": 150}
+    ],
+    "KMDT": [
+        {"id": "13", "heading": 130, "length_ft": 10001, "width_ft": 200},
+        {"id": "31", "heading": 310, "length_ft": 10001, "width_ft": 200}
+    ],
+    "KLNS": [
+        {"id": "08", "heading": 80, "length_ft": 6933, "width_ft": 150},
+        {"id": "26", "heading": 260, "length_ft": 6933, "width_ft": 150},
+        {"id": "13", "heading": 130, "length_ft": 4102, "width_ft": 100},
+        {"id": "31", "heading": 310, "length_ft": 4102, "width_ft": 100}
+    ],
+    "KRDG": [
+        {"id": "13", "heading": 130, "length_ft": 6350, "width_ft": 150},
+        {"id": "31", "heading": 310, "length_ft": 6350, "width_ft": 150},
+        {"id": "18", "heading": 180, "length_ft": 5151, "width_ft": 150},
+        {"id": "36", "heading": 0, "length_ft": 5151, "width_ft": 150}
+    ],
+    "KABE": [
+        {"id": "06", "heading": 60, "length_ft": 7599, "width_ft": 150},
+        {"id": "24", "heading": 240, "length_ft": 7599, "width_ft": 150},
+        {"id": "13", "heading": 130, "length_ft": 5800, "width_ft": 150},
+        {"id": "31", "heading": 310, "length_ft": 5800, "width_ft": 150}
+    ],
+    "KAVP": [
+        {"id": "04", "heading": 40, "length_ft": 7501, "width_ft": 150},
+        {"id": "22", "heading": 220, "length_ft": 7501, "width_ft": 150},
+        {"id": "10", "heading": 100, "length_ft": 4300, "width_ft": 150},
+        {"id": "28", "heading": 280, "length_ft": 4300, "width_ft": 150}
+    ],
+    "KPHL": [
+        {"id": "09R", "heading": 90, "length_ft": 12000, "width_ft": 200},
+        {"id": "27L", "heading": 270, "length_ft": 12000, "width_ft": 200},
+        {"id": "17", "heading": 170, "length_ft": 6500, "width_ft": 150},
+        {"id": "35", "heading": 350, "length_ft": 6500, "width_ft": 150}
+    ],
+    "KSEG": [
+        {"id": "17", "heading": 170, "length_ft": 4760, "width_ft": 75},
+        {"id": "35", "heading": 350, "length_ft": 4760, "width_ft": 75}
+    ],
+    "KFIG": [
+        {"id": "12", "heading": 120, "length_ft": 4499, "width_ft": 75},
+        {"id": "30", "heading": 300, "length_ft": 4499, "width_ft": 75}
+    ]
+}

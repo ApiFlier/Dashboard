@@ -1,0 +1,93 @@
+{
+    "KAGC": [
+        {"type": "ATIS", "frequency": "126.95"},
+        {"type": "TOWER", "frequency": "121.1"}
+    ],
+    "KPIT": [
+        {"type": "ATIS", "frequency": "119.35"},
+        {"type": "TOWER", "frequency": "128.3"}
+    ],
+    "KBVI": [
+        {"type": "ATIS", "frequency": "118.35"},
+        {"type": "TOWER", "frequency": "120.3"},
+        {"type": "GND", "frequency": "121.8"}
+    ],
+    "KHLG": [
+        {"type": "ATIS", "frequency": "124.15"},
+        {"type": "TOWER", "frequency": "120.7"},
+        {"type": "GND", "frequency": "121.9"}
+    ],
+    "KLBE": [
+        {"type": "ATIS", "frequency": "118.375"},
+        {"type": "TOWER", "frequency": "125.0"},
+        {"type": "GND", "frequency": "121.8"}
+    ],
+    "KJST": [
+        {"type": "ATIS", "frequency": "118.325"},
+        {"type": "TOWER", "frequency": "125.75"},
+        {"type": "GND", "frequency": "121.6"}
+    ],
+    "KFKL": [
+        {"type": "AWOS", "frequency": "118.175"},
+        {"type": "CTAF", "frequency": "122.7"}
+    ],
+    "KDUJ": [
+        {"type": "ASOS", "frequency": "119.025"},
+        {"type": "CTAF", "frequency": "123.0"}
+    ],
+    "KERI": [
+        {"type": "ATIS", "frequency": "126.8"},
+        {"type": "TOWER", "frequency": "118.1"}
+    ],
+    "KBFD": [
+        {"type": "ASOS", "frequency": "133.825"},
+        {"type": "CTAF", "frequency": "123.075"}
+    ],
+    "KUNV": [
+        {"type": "ATIS", "frequency": "127.65"},
+        {"type": "TOWER", "frequency": "128.475"},
+        {"type": "GND", "frequency": "119.625"}
+    ],
+    "KIPT": [
+        {"type": "ATIS", "frequency": "121.4"},
+        {"type": "TOWER", "frequency": "119.1"},
+        {"type": "GND", "frequency": "121.9"}
+    ],
+    "KMDT": [
+        {"type": "ATIS", "frequency": "118.8"},
+        {"type": "TOWER", "frequency": "124.8"},
+        {"type": "GND", "frequency": "121.7"}
+    ],
+    "KLNS": [
+        {"type": "ATIS", "frequency": "125.675"},
+        {"type": "TOWER", "frequency": "120.9"},
+        {"type": "GND", "frequency": "121.8"}
+    ],
+    "KRDG": [
+        {"type": "ATIS", "frequency": "127.1"},
+        {"type": "TOWER", "frequency": "119.9"},
+        {"type": "GND", "frequency": "121.9"}
+    ],
+    "KABE": [
+        {"type": "ATIS", "frequency": "126.975"},
+        {"type": "TOWER", "frequency": "120.5"},
+        {"type": "GND", "frequency": "121.9"}
+    ],
+    "KAVP": [
+        {"type": "ATIS", "frequency": "111.6"},
+        {"type": "TOWER", "frequency": "120.1"}
+    ],
+    "KPHL": [
+        {"type": "ATIS", "frequency": "133.4"},
+        {"type": "TOWER", "frequency": "118.5"},
+        {"type": "GND", "frequency": "121.9"}
+    ],
+    "KSEG": [
+        {"type": "AWOS", "frequency": "123.97"},
+        {"type": "CTAF", "frequency": "122.7"}
+    ],
+    "KFIG": [
+        {"type": "ASOS", "frequency": "119.275"},
+        {"type": "CTAF", "frequency": "122.725"}
+    ]
+}
