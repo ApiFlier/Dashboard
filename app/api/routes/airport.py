@@ -4,12 +4,21 @@ from typing import List, Dict, Any
 from app.services.airport_data import search_airports, get_airport_directory
 from app.api.routes import weather, runways, alternates, hazards, brief
 from app.services.coverage_service import get_airport_coverage
+from app.services.summary_service import get_airport_summary, get_batch_airport_summaries
+from app.models.airport import AirportDirectory, AirportCoverage, AirportSummary
 
 router = APIRouter()
 
 @router.get("/airports/search")
 async def search(q: str = "", limit: int = 10):
     return search_airports(q, limit)
+
+@router.get("/airports/summary", response_model=List[dict])
+async def batch_summary(idents: str = ""):
+    if not idents:
+        return []
+    ident_list = [i.strip() for i in idents.split(",") if i.strip()]
+    return await get_batch_airport_summaries(ident_list)
 
 @router.get("/airport/{airport}/directory")
 async def directory(airport: str):
@@ -21,6 +30,15 @@ async def directory(airport: str):
 @router.get("/airport/{airport}/coverage")
 async def coverage(airport: str):
     return await get_airport_coverage(airport)
+
+@router.get("/airport/{airport}/summary", response_model=AirportSummary)
+async def summary(airport: str):
+    try:
+        return await get_airport_summary(airport)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/airport/{airport}/dashboard")
 async def get_dashboard_data(airport: str):
