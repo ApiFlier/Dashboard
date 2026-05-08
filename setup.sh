@@ -101,22 +101,24 @@ echo "Application is up and running!"
 echo "Access the dashboard at: http://localhost:$PORT"
 
 echo ""
-echo "Do you want to remove local source files (leaving only runtime configs and backups)?"
-echo "Type exactly 'DELETE SOURCE' to proceed, or anything else to skip:"
+echo "Delete local source files now? [y/N]"
+echo "(The running app and all Docker volume state are preserved either way.)"
 read -r user_input
-
-if [ "$user_input" = "DELETE SOURCE" ]; then
-    echo "Removing source files..."
-    find . -mindepth 1 -maxdepth 1 \
-        ! -name '.env' \
-        ! -name 'backups' \
-        ! -name 'backup.sh' \
-        ! -name 'restore.sh' \
-        ! -name 'setup.sh' \
-        -exec rm -rf {} +
-    echo "Source files removed. The application continues running via Docker."
-else
-    echo "Source files preserved."
-fi
+case "${user_input}" in
+    [yY])
+        echo "Removing source files..."
+        find . -mindepth 1 -maxdepth 1 \
+            ! -name '.env' \
+            ! -name 'backups' \
+            ! -name 'backup.sh' \
+            ! -name 'restore.sh' \
+            ! -name 'setup.sh' \
+            -exec rm -rf {} +
+        echo "Source files removed. The app continues running via Docker."
+        ;;
+    *)
+        echo "Source files preserved."
+        ;;
+esac
 
 echo "Setup complete."

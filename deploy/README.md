@@ -15,7 +15,7 @@ For a production deployment:
 1. Run `./setup.sh`.
 2. The setup script will pull or build the image, provision a Docker named volume (`airfieldops_state`), and start the container with a restart policy of `unless-stopped`.
 3. The running app has NO bind-mount dependency on the local source folder.
-4. You can safely delete the local source code (using the `DELETE SOURCE` prompt). The application will continue running and auto-restart on host reboots.
+4. You can safely delete the local source code when prompted at the end of setup (answer `y`). The application will continue running and auto-restart on host reboots.
 
 To make future updates after deleting the local files, you will need to re-clone the repository and re-run setup or deployment commands.
 
