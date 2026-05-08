@@ -233,7 +233,6 @@ function navigateToAirport(icao) {
 
 function updateNavLinks(icao) {
     const nav = document.getElementById('main-nav');
-    const dashboardLink = document.getElementById('nav-home');
     const settings = utils.getSettings();
     const hash = window.location.hash;
     
@@ -244,9 +243,7 @@ function updateNavLinks(icao) {
     }
     nav.style.display = 'flex';
     
-    // Dashboard link behavior: current airport if exists, else default
     const targetIcao = icao || settings.default_airport;
-    dashboardLink.href = `#/airport/${targetIcao}`;
 
     // Sub-nav links
     const links = {
@@ -267,8 +264,13 @@ function updateNavLinks(icao) {
         const el = document.getElementById(id);
         if (el) {
             el.href = href;
-            // Check if current hash matches exactly or is root of airport view
-            if (hash === href || (id === 'nav-home' && hash === `#/airport/${targetIcao}/dashboard`)) {
+            // Highlight if hash starts with the link's target, but be careful with home vs sub-pages
+            if (id === 'nav-home') {
+                const parts = hash.split('/');
+                if (hash === href || (parts.length === 3 && parts[1] === 'airport' && parts[2] === targetIcao)) {
+                    el.classList.add('active');
+                }
+            } else if (hash === href) {
                 el.classList.add('active');
             }
         }
@@ -298,11 +300,15 @@ async function handleRoute() {
     if (hash.startsWith('/airport/')) {
         const parts = hash.split('/');
         const icao = parts[2];
+        const view = parts[3] || 'dashboard';
+        
         currentIcao = icao;
         updateNavLinks(icao);
         
-        if (content.innerHTML === '' || content.querySelector('.loading') || !content.innerHTML.includes(icao)) {
+        // Check if we need to show loading (if current content is empty or for a different airport/view)
+        if (content.innerHTML === '' || content.querySelector('.loading') || !content.dataset.route || content.dataset.route !== hash) {
              content.innerHTML = '<div class="loading">Loading airport data...</div>';
+             content.dataset.route = hash;
         }
         
         await refreshCurrentView(false);
@@ -1066,9 +1072,12 @@ async function renderDetailedHazards(container, icao) {
     const data = await api.getHazards(icao);
     container.innerHTML = `
         <div class="page-header">
-            <h1>${icao} Hazards</h1>
+            <h1>${icao} Hazards & Alerts</h1>
         </div>
         ${utils.renderWarnings(data.warnings)}
+        
+        ${cards.renderConvectiveCard(data.convective_awareness)}
+
         <div class="card" style="margin-bottom: 2rem;">
             <h2>Regional Risk Level: ${utils.getRiskLevelChip(data.risk_level)}</h2>
             <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-top: 1rem;">

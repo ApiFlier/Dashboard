@@ -72,5 +72,6 @@ async def test_runway_wind_no_fallback_by_default():
         
         assert analysis.wind_direction_deg is None
         assert "No METAR data available" in analysis.warnings[0]
-        assert analysis.favored_runway.reason == "Wind data unavailable."
+        assert analysis.favored_runway.reason == "Favored runway unavailable because field wind is unavailable."
+
         assert analysis.runways[0].headwind_kt is None

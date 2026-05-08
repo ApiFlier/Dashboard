@@ -249,7 +249,7 @@ const cards = {
                     <div>Weather: ${utils.getRiskLevelChip(condition.weather_risk)}</div>
                     <div>Hazards: ${utils.getRiskLevelChip(condition.hazard_risk)}</div>
                 </div>
-                <p><strong>Favored Runway:</strong> ${favored.end || 'None'} (${favored.reason || 'N/A'})</p>
+                <p><strong>Favored Runway:</strong> ${favored.end || 'None'} (${favored.reason || 'Reason unavailable'})</p>
                 
                 <h3>Concerns</h3>
                 <ul class="plain-english-list">
@@ -508,6 +508,33 @@ const cards = {
         return html;
     },
 
+    renderConvectiveCard(convective) {
+        if (!convective) return '';
+        
+        const isHigh = convective.risk_level === 'high';
+        const isMod = convective.risk_level === 'moderate';
+        const borderStyle = isHigh ? 'border: 2px solid var(--danger);' : isMod ? 'border: 2px solid var(--warning);' : 'border: 1px solid var(--border-color);';
+        const bgStyle = isHigh ? 'background: rgba(239, 68, 68, 0.1);' : isMod ? 'background: rgba(245, 158, 11, 0.1);' : 'background: var(--card-bg-alt);';
+
+        return `
+            <div style="margin-bottom: 1rem; padding: 1rem; border-radius: 8px; ${borderStyle} ${bgStyle}">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <strong style="font-size: 1rem;">Convective / Lightning Awareness</strong>
+                    ${utils.getRiskLevelChip(convective.risk_level)}
+                </div>
+                <p style="margin: 0.5rem 0; font-weight: bold; font-size: 0.95rem;">${convective.summary}</p>
+                ${convective.indicators.length > 0 ? `
+                    <ul style="margin: 0.5rem 0; padding-left: 1.2rem; font-size: 0.85rem;">
+                        ${convective.indicators.map(ind => `<li>${ind}</li>`).join('')}
+                    </ul>
+                ` : ''}
+                <div style="font-size: 0.7rem; color: var(--text-muted); font-style: italic; margin-top: 0.5rem;">
+                    ${convective.disclaimer}
+                </div>
+            </div>
+        `;
+    },
+
     renderHazardsCard(hazards) {
         if (!hazards) {
             return `
@@ -521,9 +548,13 @@ const cards = {
             <div class="card">
                 <h2>Hazards & Alerts</h2>
                 ${utils.renderWarnings(hazards.warnings)}
+
+                ${this.renderConvectiveCard(hazards.convective_awareness)}
+
                 <div style="margin-bottom: 1rem;">
-                    Risk Level: ${utils.getRiskLevelChip(hazards.risk_level)}
+                    <strong>Alert Status:</strong> ${utils.getRiskLevelChip(hazards.risk_level)}
                 </div>
+
                 <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.5rem; font-size: 0.85rem; margin-bottom: 1rem;">
                     <div style="background: var(--card-bg-alt); color: var(--text); padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color);">NWS Alerts: ${hazards.counts.nws_alerts}</div>
                     <div style="background: var(--card-bg-alt); color: var(--text); padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color);">SIGMETs: ${hazards.counts.sigmets}</div>

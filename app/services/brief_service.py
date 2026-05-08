@@ -52,7 +52,7 @@ async def build_airport_brief(icao: str) -> AirportBrief:
     
     favored = FavoredRunwayBrief(
         end=getattr(runway_data.favored_runway, "id", None) if runway_data and runway_data.favored_runway else None,
-        reason=getattr(runway_data.favored_runway, "reason", "No runway data") if runway_data and runway_data.favored_runway else "No runway data"
+        reason=getattr(runway_data.favored_runway, "reason", "Favored runway unavailable because runway data is unavailable.") if runway_data and runway_data.favored_runway else "Favored runway unavailable because runway data is unavailable."
     )
     
     concerns = []

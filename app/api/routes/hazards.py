@@ -12,5 +12,4 @@ async def hazards(airport: str, radius_nm: float = 75.0):
     if not directory:
         raise HTTPException(status_code=404, detail="Airport not found")
         
-    h = await get_hazards_for_airport(airport, directory["lat"], directory["lon"], radius_nm)
-    return h
+    return await get_hazards_for_airport(airport, directory["lat"], directory["lon"], radius_nm)

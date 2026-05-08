@@ -1,5 +1,7 @@
 from pydantic import BaseModel
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
+from .convective import ConvectiveAwareness
 
 class HazardSummary(BaseModel):
     airport: str
@@ -12,3 +14,4 @@ class HazardSummary(BaseModel):
     sigmets: List[Dict[str, Any]] = []
     gairmets: List[Dict[str, Any]] = []
     cwas: List[Dict[str, Any]] = []
+    convective_awareness: Optional[ConvectiveAwareness] = None
