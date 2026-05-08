@@ -87,10 +87,18 @@ def test_alternates_shape(client, mock_external_apis):
     response = client.get("/api/airport/KAGC/alternates")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
+    assert isinstance(data, dict)
+    assert "alternates" in data
+    assert isinstance(data["alternates"], list)
+    assert "radius_nm" in data
+    assert "limit" in data
+    assert "candidates_considered" in data
+    assert "reporting_candidates_count" in data
+    assert "excluded_summary" in data
     
-    if len(data) > 0:
-        first = data[0]
+    alternates = data["alternates"]
+    if len(alternates) > 0:
+        first = alternates[0]
         assert "icao" in first
         assert "rank_reason" in first
         assert "score" in first

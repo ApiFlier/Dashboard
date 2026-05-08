@@ -60,4 +60,4 @@ async def test_runway_wording_no_wind():
          patch("app.api.routes.runways.aw_client.get_metar", new_callable=AsyncMock) as mock_aw:
         mock_aw.return_value = []
         res = await get_runways("KPHL")
-        assert res.favored_runway.reason == "No field wind available."
+        assert res.favored_runway.reason == "Favored runway unavailable because field wind is unavailable."

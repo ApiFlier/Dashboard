@@ -87,7 +87,7 @@ async def runways(airport: str):
     if not runways_raw:
         favored.reason = "No runway data available."
     elif not metar:
-        favored.reason = "No field wind available."
+        favored.reason = "Favored runway unavailable because field wind is unavailable."
     elif wind_spd == 0:
         favored.reason = "Calm. Any runway may be used."
     elif variable_wind:

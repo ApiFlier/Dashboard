@@ -52,11 +52,43 @@ class AviationWeatherClient:
     async def get_metars(self, icaos: List[str]) -> List[Dict[str, Any]]:
         if not icaos:
             return []
-        try:
-            # Join multiple IDs with commas
-            return await self._get_json("metar", {"ids": ",".join(icaos), "format": "json"}, ttl=self.METAR_TTL)
-        except Exception:
+            
+        # 1. Filter identifiers that AviationWeather often rejects
+        # - Avoid IDs with dashes (e.g. US-1234)
+        # - Prefer 3-4 character IDs
+        filtered_icaos = [
+            icao for icao in icaos 
+            if "-" not in icao and 2 <= len(icao) <= 5
+        ]
+        
+        if not filtered_icaos:
             return []
+
+        # 2. Chunk requests to avoid 400 Bad Request (URL too long or too many IDs)
+        chunk_size = 25
+        chunks = [filtered_icaos[i:i + chunk_size] for i in range(0, len(filtered_icaos), chunk_size)]
+        
+        all_results = []
+        for chunk in chunks:
+            try:
+                ids_str = ",".join(chunk)
+                # Use _get_json which handles caching
+                data = await self._get_json("metar", {"ids": ids_str, "format": "json"}, ttl=self.METAR_TTL)
+                if isinstance(data, list):
+                    all_results.extend(data)
+                elif isinstance(data, dict):
+                    # Sometimes single results come back as dict? (unlikely for format=json)
+                    all_results.append(data)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:
+                    logger.warning(f"AviationWeather 400 for chunk: {chunk[:5]}...")
+                    continue
+                raise e
+            except Exception as e:
+                logger.warning(f"Batch fetch failed for chunk: {e}")
+                continue
+                
+        return all_results
 
     async def get_taf(self, icao: str) -> Optional[List[Dict[str, Any]]]:
         try:
