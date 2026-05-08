@@ -718,6 +718,15 @@ async function renderDashboard(container, icao) {
     const favorites = await api.getFavorites();
     const isFavorite = favorites.some(f => f.ident === icao);
 
+    const safeRender = (fn, ...args) => {
+        try {
+            return fn(...args);
+        } catch (e) {
+            console.error("Card render failed:", e);
+            return `<div class="card error"><h3>Component Error</h3><p>Failed to render this section.</p></div>`;
+        }
+    };
+
     container.innerHTML = `
         <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
@@ -733,14 +742,14 @@ async function renderDashboard(container, icao) {
         </div>
         <div id="dashboard-set-default-msg" style="text-align: right; color: var(--success); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 1rem; display: none;">Saved!</div>
         <div class="grid">
-            ${cards.renderBriefCard(brief)}
-            ${cards.renderWeatherCard(weather)}
-            ${cards.renderRunwaysCard(runways)}
-            ${cards.renderHazardsCard(hazards)}
-            ${cards.renderAlternatesCard(alts, icao)}
-            ${cards.renderDirectoryCard(dir)}
-            ${cards.renderCoverageCard(coverage)}
-            ${cards.renderOfficialResourcesCard(icao)}
+            ${safeRender(cards.renderBriefCard, brief)}
+            ${safeRender(cards.renderWeatherCard, weather)}
+            ${safeRender(cards.renderRunwaysCard, runways)}
+            ${safeRender(cards.renderHazardsCard, hazards)}
+            ${safeRender(cards.renderAlternatesCard, alts, icao)}
+            ${safeRender(cards.renderDirectoryCard, dir)}
+            ${safeRender(cards.renderCoverageCard, coverage)}
+            ${safeRender(cards.renderOfficialResourcesCard, icao)}
         </div>
     `;
 
@@ -984,8 +993,9 @@ async function renderDetailedRunways(container, icao) {
                             return `
                                 <tr class="${r.id === data.favored_runway.id ? 'favored' : ''}">
                                     <td><strong>${r.id}</strong></td>
-                                    <td>${r.heading}°</td>
+                                    <td>${Math.round(r.heading)}°</td>
                                     <td>${r.length_ft} ft</td>
+
                                     <td>${r.headwind_kt ?? 0} kt</td>
                                     <td>${r.tailwind_kt ?? 0} kt</td>
                                     <td>${r.crosswind_kt ?? 0}${r.crosswind_gust_kt ? ` (${r.crosswind_gust_kt})` : ''} kt</td>

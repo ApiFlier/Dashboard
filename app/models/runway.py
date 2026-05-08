@@ -13,7 +13,7 @@ class RunwayRiskFlags(BaseModel):
 
 class RunwayConditions(BaseModel):
     id: str
-    heading: int
+    heading: float
     length_ft: int
     width_ft: int
     le_latitude_deg: Optional[float] = None

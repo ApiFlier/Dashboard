@@ -111,6 +111,14 @@ When exposing AirfieldOps Core publicly, ensure the following safety measures:
 
 **Note:** This application is advisory-only. It is not for certified aviation, dispatch, or flight planning.
 
+### Content Security Policy & Analytics
+
+AirfieldOps Core maintains a strict Content Security Policy (CSP) to ensure security and prevent unauthorized script execution. 
+
+1. **Analytics/Beacons:** This project does not include any analytics or tracking scripts (e.g., Google Analytics, Cloudflare Insights).
+2. **CSP Violations:** If you deploy via Cloudflare and see CSP violation warnings in your browser console for `static.cloudflareinsights.com/beacon.min.js`, it is because Cloudflare is automatically injecting an analytics beacon at the edge.
+3. **Disabling Analytics:** To resolve these warnings, you should **disable Web Analytics** in your Cloudflare dashboard under the "Web Analytics" or "Scrape Shield" settings for your domain. Do not weaken the app's CSP to accommodate these scripts.
+
 ## Testing
 To run the test suite:
 ```bash

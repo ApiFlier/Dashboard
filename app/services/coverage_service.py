@@ -101,7 +101,11 @@ async def find_nearest_reporting_stations(lat: float, lon: float, exclude_icao: 
     metars = await aw_client.get_metars(candidate_icaos)
     
     # Map METARs by ident
-    metar_map = {m["icao"]: m for m in metars}
+    metar_map = {}
+    for m in metars:
+        ident = m.get("icao") or m.get("icaoId")
+        if ident:
+            metar_map[ident] = m
     
     reporting_stations = []
     for c in top_candidates:

@@ -1,7 +1,7 @@
 import math
 from typing import Optional, Tuple
 
-def calculate_wind_components(runway_heading_deg: int, wind_direction_deg: Optional[int], wind_speed_kt: Optional[float], gust_kt: Optional[float] = None) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+def calculate_wind_components(runway_heading_deg: float, wind_direction_deg: Optional[int], wind_speed_kt: Optional[float], gust_kt: Optional[float] = None) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
     if wind_direction_deg is None or wind_speed_kt is None:
         return None, None, None, None
         

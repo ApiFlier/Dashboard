@@ -224,35 +224,59 @@ const cards = {
     },
 
     renderBriefCard(brief) {
+        if (!brief) {
+            return `
+                <div class="card">
+                    <h2>Operational Brief</h2>
+                    <p>Brief data unavailable.</p>
+                </div>
+            `;
+        }
+
+        const condition = brief.condition || {};
+        const favored = brief.favored_runway || {};
+        const airport = brief.airport || {};
+        const concerns = Array.isArray(brief.main_concerns) ? brief.main_concerns : [];
+        const plainEnglish = Array.isArray(brief.plain_english) ? brief.plain_english : [];
+        const warnings = Array.isArray(brief.warnings) ? brief.warnings : [];
+
         return `
             <div class="card">
                 <h2>Operational Brief</h2>
-                ${utils.renderWarnings(brief.warnings)}
-                <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
-                    <div>Rules: ${utils.getFlightCategoryChip(brief.condition.flight_category)}</div>
-                    <div>Weather: ${utils.getRiskLevelChip(brief.condition.weather_risk)}</div>
-                    <div>Hazards: ${utils.getRiskLevelChip(brief.condition.hazard_risk)}</div>
+                ${utils.renderWarnings(warnings)}
+                <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
+                    <div>Rules: ${utils.getFlightCategoryChip(condition.flight_category)}</div>
+                    <div>Weather: ${utils.getRiskLevelChip(condition.weather_risk)}</div>
+                    <div>Hazards: ${utils.getRiskLevelChip(condition.hazard_risk)}</div>
                 </div>
-                <p><strong>Favored Runway:</strong> ${brief.favored_runway.end || 'None'} (${brief.favored_runway.reason})</p>
+                <p><strong>Favored Runway:</strong> ${favored.end || 'None'} (${favored.reason || 'N/A'})</p>
                 
                 <h3>Concerns</h3>
                 <ul class="plain-english-list">
-                    ${brief.main_concerns.length > 0 ? brief.main_concerns.map(c => `<li>${c}</li>`).join('') : '<li>No major concerns</li>'}
+                    ${concerns.length > 0 ? concerns.map(c => `<li>${c}</li>`).join('') : '<li>No major concerns</li>'}
                 </ul>
 
                 <h3>Summary</h3>
                 <ul class="plain-english-list">
-                    ${brief.plain_english.map(p => `<li>${p}</li>`).join('')}
+                    ${plainEnglish.length > 0 ? plainEnglish.map(p => `<li>${p}</li>`).join('') : '<li>No summary available</li>'}
                 </ul>
 
                 <div class="card-footer">
-                    <a href="#/airport/${brief.airport.icao}/brief">View Full Brief →</a>
+                    <a href="#/airport/${airport.icao || ''}/brief">View Full Brief →</a>
                 </div>
             </div>
         `;
     },
 
     renderWeatherCard(weather) {
+        if (!weather) {
+            return `
+                <div class="card">
+                    <h2>Weather</h2>
+                    <p>Weather data unavailable.</p>
+                </div>
+            `;
+        }
         const metar = weather.metar;
         const taf = weather.taf;
         const nearby = weather.nearby_weather_stations || [];
@@ -371,6 +395,14 @@ const cards = {
     },
 
     renderRunwaysCard(analysis) {
+        if (!analysis) {
+            return `
+                <div class="card">
+                    <h2>Runway Analysis</h2>
+                    <p>Runway data unavailable.</p>
+                </div>
+            `;
+        }
         let html = `
             <div class="card">
                 <h2>Runway Analysis</h2>
@@ -429,6 +461,14 @@ const cards = {
     },
 
     renderAlternatesCard(alternates, icao) {
+        if (!alternates) {
+            return `
+                <div class="card">
+                    <h2>Top Alternates</h2>
+                    <p>Alternate data unavailable.</p>
+                </div>
+            `;
+        }
         let html = `
             <div class="card">
                 <h2>Top Alternates</h2>
@@ -469,6 +509,14 @@ const cards = {
     },
 
     renderHazardsCard(hazards) {
+        if (!hazards) {
+            return `
+                <div class="card">
+                    <h2>Hazards</h2>
+                    <p>Hazard data unavailable.</p>
+                </div>
+            `;
+        }
         let html = `
             <div class="card">
                 <h2>Hazards & Alerts</h2>
