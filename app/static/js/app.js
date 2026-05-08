@@ -758,12 +758,12 @@ async function renderDashboard(container, icao) {
     const favorites = await api.getFavorites();
     const isFavorite = favorites.some(f => f.ident === icao);
 
-    const safeRender = (fn, ...args) => {
+    const safeRender = (label, renderFn) => {
         try {
-            return fn(...args);
+            return renderFn();
         } catch (e) {
-            console.error("Card render failed:", e);
-            return `<div class="card error"><h3>Component Error</h3><p>Failed to render this section.</p></div>`;
+            console.error(`${label} card render failed:`, e);
+            return cards.renderUnavailableCard(label, "Unable to render this section.");
         }
     };
 
@@ -782,14 +782,14 @@ async function renderDashboard(container, icao) {
         </div>
         <div id="dashboard-set-default-msg" style="text-align: right; color: var(--success); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 1rem; display: none;">Saved!</div>
         <div class="grid">
-            ${safeRender(cards.renderBriefCard, brief)}
-            ${safeRender(cards.renderWeatherCard, weather)}
-            ${safeRender(cards.renderRunwaysCard, runways)}
-            ${safeRender(cards.renderHazardsCard, hazards)}
-            ${safeRender(cards.renderAlternatesCard, alts, icao)}
-            ${safeRender(cards.renderDirectoryCard, dir)}
-            ${safeRender(cards.renderCoverageCard, coverage)}
-            ${safeRender(cards.renderOfficialResourcesCard, icao)}
+            ${safeRender("Brief", () => cards.renderBriefCard(brief))}
+            ${safeRender("Weather", () => cards.renderWeatherCard(weather))}
+            ${safeRender("Runways", () => cards.renderRunwaysCard(runways))}
+            ${safeRender("Hazards", () => cards.renderHazardsCard(hazards))}
+            ${safeRender("Alternates", () => cards.renderAlternatesCard(alts, icao))}
+            ${safeRender("Directory", () => cards.renderDirectoryCard(dir))}
+            ${safeRender("Coverage", () => cards.renderCoverageCard(coverage))}
+            ${safeRender("Official Resources", () => cards.renderOfficialResourcesCard(icao))}
         </div>
     `;
 
@@ -1078,18 +1078,25 @@ async function renderDetailedAlternates(container, icao, includeNonReporting = f
         // Fetch up to 25 alternates (hard cap in backend)
         const data = await api.getAlternates(icao, radius_nm, 25, includeNonReporting);
         
-        const alternates = data.alternates || [];
-        const excluded = data.excluded_summary || {};
+        const alternatesList = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.alternates)
+                ? data.alternates
+                : [];
+        
+        const radius = data?.radius_nm || radius_nm;
+        const reportingCount = data?.reporting_candidates_count ?? alternatesList.filter(a => a.flight_category !== 'UNKNOWN').length;
+        const totalConsidered = data?.candidates_considered ?? alternatesList.length;
+        const excluded = data?.excluded_summary || {};
         const noWeatherCount = excluded.no_weather || 0;
-        const totalConsidered = data.candidates_considered || 0;
 
         container.innerHTML = `
             <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
                 <div>
                     <h1>${icao} Alternates</h1>
                     <div style="font-size: 0.9rem; color: var(--text-muted);">
-                        Top ${includeNonReporting ? '' : 'reporting'} fields within ${radius_nm} nm. 
-                        (${data.reporting_candidates_count} reporting of ${totalConsidered} considered)
+                        Top ${includeNonReporting ? '' : 'reporting'} fields within ${radius} nm. 
+                        (${reportingCount} reporting of ${totalConsidered} considered)
                     </div>
                 </div>
                 <div style="margin-bottom: 0.5rem; background: var(--card-bg-alt); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid var(--border-color);">
@@ -1114,7 +1121,7 @@ async function renderDetailedAlternates(container, icao, includeNonReporting = f
                             </tr>
                         </thead>
                         <tbody>
-                            ${alternates.length > 0 ? alternates.map(a => `
+                            ${alternatesList.length > 0 ? alternatesList.map(a => `
                                 <tr>
                                     <td><span class="chip ${a.score > 70 ? 'success' : a.score > 30 ? 'info' : 'warning'}">${a.score}</span></td>
                                     <td>
@@ -1134,7 +1141,7 @@ async function renderDetailedAlternates(container, icao, includeNonReporting = f
                                 </tr>
                             `).join('') : `
                                 <tr><td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-                                    <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">No suitable alternates found</div>
+                                    <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">No strong reporting alternate candidates found within ${radius} NM</div>
                                     <p>Try increasing the search radius in settings or enabling non-reporting fields.</p>
                                 </td></tr>
                             `}
@@ -1145,9 +1152,7 @@ async function renderDetailedAlternates(container, icao, includeNonReporting = f
                 <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
                     <div style="font-size: 0.85rem; color: var(--text-muted);">
                         <strong>Exclusion Summary:</strong> 
-                        ${noWeatherCount} no weather, 
-                        ${excluded.no_runways || 0} no runways, 
-                        ${excluded.closed_or_unsupported || 0} closed/unsupported
+                        ${noWeatherCount > 0 ? `${noWeatherCount} nearby fields were skipped because field weather was unavailable.` : 'No nearby fields were skipped.'}
                     </div>
                     <div class="warning-callout" style="font-size: 0.75rem; border-left-color: var(--text-muted); margin: 0; padding: 0.5rem 1rem;">
                         Operational awareness only. Always verify data in official publications.

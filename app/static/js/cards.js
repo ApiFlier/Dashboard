@@ -415,7 +415,7 @@ const cards = {
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; text-align:center;">
                     Simplified sketch below. <strong>Use official FAA diagrams for navigation.</strong>
                 </div>
-                ${this.renderRunwaySketch(analysis.runways, analysis.favored_runway.id, analysis.wind_direction_deg)}
+                ${cards.renderRunwaySketch(analysis.runways, analysis.favored_runway.id, analysis.wind_direction_deg)}
 
                 <div class="table-container">
                     <table>
@@ -463,8 +463,8 @@ const cards = {
         return html;
     },
 
-    renderAlternatesCard(data, icao) {
-        if (!data || data.error) {
+    renderAlternatesCard(alternates, icao) {
+        if (!alternates || alternates.error) {
             return `
                 <div class="card">
                     <h2>Top Alternates</h2>
@@ -473,7 +473,11 @@ const cards = {
             `;
         }
         
-        const alternates = Array.isArray(data.alternates) ? data.alternates : [];
+        const alternatesList = Array.isArray(alternates)
+            ? alternates
+            : Array.isArray(alternates?.alternates)
+                ? alternates.alternates
+                : [];
         
         let html = `
             <div class="card">
@@ -491,10 +495,10 @@ const cards = {
                         <tbody>
         `;
 
-        if (alternates.length === 0) {
-            html += '<tr><td colspan="4" style="text-align: center; padding: 1rem; color: var(--text-muted);">No reporting alternates found nearby.</td></tr>';
+        if (alternatesList.length === 0) {
+            html += '<tr><td colspan="4" style="text-align: center; padding: 2rem; color: var(--text-muted);">No strong reporting alternate candidates found nearby.</td></tr>';
         } else {
-            alternates.slice(0, 5).forEach(a => {
+            alternatesList.slice(0, 5).forEach(a => {
                 html += `
                     <tr>
                         <td><strong>${a.icao}</strong></td>
@@ -559,7 +563,7 @@ const cards = {
                 <h2>Hazards & Alerts</h2>
                 ${utils.renderWarnings(hazards.warnings)}
 
-                ${this.renderConvectiveCard(hazards.convective_awareness)}
+                ${cards.renderConvectiveCard(hazards.convective_awareness)}
 
                 <div style="margin-bottom: 1rem;">
                     <strong>Alert Status:</strong> ${utils.getRiskLevelChip(hazards.risk_level)}
@@ -710,6 +714,18 @@ const cards = {
                     <a href="#/airport/${icao}/weather" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">WX</a>
                     <a href="#/airport/${icao}/runways" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">RWY</a>
                     <button class="chip danger remove-favorite-btn" data-icao="${icao}" style="border: none; cursor: pointer; flex: 0.5;">×</button>
+                </div>
+            </div>
+        `;
+    },
+
+    renderUnavailableCard(title, message) {
+        return `
+            <div class="card error">
+                <h2>${title}</h2>
+                <p style="color: var(--danger-text);">${message}</p>
+                <div style="font-size: 0.8rem; margin-top: 1rem; color: var(--text-muted);">
+                    The system encountered an error while rendering this component.
                 </div>
             </div>
         `;
