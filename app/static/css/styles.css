@@ -543,19 +543,33 @@ footer {
     cursor: pointer;
 }
 
-@media (max-width: 768px) {
-    header {
-        flex-direction: column;
-        gap: 1rem;
-    }
-    .search-container {
-        width: 100%;
-    }
-    .search-container input {
-        flex-grow: 1;
-    }
+.board-card {
+    min-height: 200px;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
+.board-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.board-card.danger {
+    border: 1px solid var(--danger-border);
+    background: var(--danger-bg);
+}
+
+.board-card h3 {
+    color: var(--accent);
+}
+
+.board-card-actions .chip {
+    font-size: 0.7rem;
+    padding: 0.3rem 0.5rem;
+}
+
+.board-card .chip.success {
+    background: var(--success);
+}
 
 @media (max-width: 768px) {
     header {

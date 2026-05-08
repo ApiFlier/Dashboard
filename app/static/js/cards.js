@@ -574,5 +574,51 @@ const cards = {
                 </div>
             </div>
         `;
+    },
+
+    renderBoardCard(data) {
+        const { airport: dir, weather, brief, hazards } = data;
+        const icao = dir.icao;
+        const metar = weather?.metar;
+        const fltCat = metar?.flight_category || (weather?.nearby_weather_stations?.length > 0 ? "NEARBY" : "UNKNOWN");
+        const wind = metar ? utils.formatWind(metar.wind) : (weather?.nearby_weather_stations?.[0]?.wind || 'N/A');
+        
+        return `
+            <div class="card board-card" data-icao="${icao}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                    <div>
+                        <h3 style="margin: 0; font-size: 1.25rem;">${icao}</h3>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${dir.name}</div>
+                    </div>
+                    ${utils.getFlightCategoryChip(fltCat)}
+                </div>
+                
+                <div style="font-size: 0.9rem; margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Wind:</span>
+                        <strong>${wind}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Favored:</span>
+                        <strong>${brief?.favored_runway?.end || 'N/A'}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Risk:</span>
+                        <strong>${utils.getRiskLevelChip(hazards?.risk_level || 'unknown')}</strong>
+                    </div>
+                </div>
+
+                ${!metar && weather?.nearby_weather_stations?.length > 0 ? `
+                    <div style="font-size: 0.7rem; color: var(--warning); margin-bottom: 0.5rem;">⚠️ Field METAR unavailable. Showing ${weather.nearby_weather_stations[0].ident}.</div>
+                ` : ''}
+
+                <div class="board-card-actions" style="display: flex; gap: 0.5rem; margin-top: auto;">
+                    <a href="#/airport/${icao}" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">Dash</a>
+                    <a href="#/airport/${icao}/weather" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">WX</a>
+                    <a href="#/airport/${icao}/runways" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">RWY</a>
+                    <button class="chip danger remove-favorite-btn" data-icao="${icao}" style="border: none; cursor: pointer; flex: 0.5;">×</button>
+                </div>
+            </div>
+        `;
     }
 };

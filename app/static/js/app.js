@@ -101,6 +101,13 @@ function setupAutocomplete(input) {
             // Home/Setup page logic
             const btn = document.getElementById('setup-save-btn');
             if (btn) btn.disabled = false;
+        } else if (input.id === 'board-search') {
+            // Board page logic
+            api.addFavorite(icao).then(() => {
+                input.value = '';
+                const content = document.getElementById('app-content');
+                renderBoard(content);
+            });
         } else if (input.id === 'set-default-apt') {
             // Settings page logic - no auto-nav
         } else {
@@ -244,6 +251,7 @@ function updateNavLinks(icao) {
     // Sub-nav links
     const links = {
         'nav-home': `#/airport/${targetIcao}`,
+        'nav-board': `#/board`,
         'nav-brief': `#/airport/${targetIcao}/brief`,
         'nav-weather': `#/airport/${targetIcao}/weather`,
         'nav-runways': `#/airport/${targetIcao}/runways`,
@@ -332,6 +340,14 @@ async function handleRoute() {
         // Keep currentIcao for sub-nav persistence
         updateNavLinks(currentIcao);
         renderSettings(content);
+        return;
+    }
+
+    if (hash === '/board') {
+        stopRefreshTimer();
+        statusBar.style.display = 'none';
+        updateNavLinks(currentIcao);
+        renderBoard(content);
         return;
     }
 
@@ -442,6 +458,76 @@ async function refreshCurrentView(isManual = false) {
 }
 
 
+async function renderBoard(container) {
+    const favorites = await api.getFavorites();
+    
+    if (favorites.length === 0) {
+        container.innerHTML = `
+            <div class="home-container">
+                <h1>Your Airport Board</h1>
+                <p>Save your favorite airports here for a compact overview.</p>
+                <div class="card" style="max-width: 500px; margin: 1.5rem auto; text-align: left; background: var(--card-bg-alt);">
+                    <p><strong>Add your first airport:</strong></p>
+                    <div class="home-search" style="position: relative; margin-top: 1rem;">
+                        <input type="text" id="board-search" placeholder="Search ICAO, IATA, or City" autocomplete="off">
+                    </div>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1.5rem;">
+                        <strong>Privacy Note:</strong> Favorites are saved <strong>only in this browser</strong> on public instances.
+                    </p>
+                </div>
+            </div>
+        `;
+        setupAutocomplete(document.getElementById('board-search'));
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>Airport Board</h1>
+            <div class="search-container" style="width: 250px;">
+                <input type="text" id="board-search" placeholder="Add airport..." autocomplete="off">
+            </div>
+        </div>
+        <div id="board-grid" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
+            <div class="loading">Loading board summaries...</div>
+        </div>
+    `;
+
+    setupAutocomplete(document.getElementById('board-search'));
+
+    const grid = document.getElementById('board-grid');
+    
+    // Fetch all summaries concurrently
+    const tasks = favorites.map(f => api.getDashboard(f.ident).catch(e => ({ error: true, icao: f.ident, message: e.message })));
+    const results = await Promise.all(tasks);
+    
+    grid.innerHTML = results.map(r => {
+        if (r.error) {
+            return `
+                <div class="card board-card danger" data-icao="${r.icao}">
+                    <h3 style="margin: 0;">${r.icao}</h3>
+                    <p style="font-size: 0.85rem; color: var(--danger-text);">Failed to load: ${r.message}</p>
+                    <div class="board-card-actions" style="margin-top: auto;">
+                        <button class="chip danger remove-favorite-btn" data-icao="${r.icao}" style="border: none; cursor: pointer; width: 100%;">Remove</button>
+                    </div>
+                </div>
+            `;
+        }
+        return cards.renderBoardCard(r);
+    }).join('');
+
+    // Attach remove handlers
+    grid.querySelectorAll('.remove-favorite-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            const icao = e.target.dataset.icao;
+            if (confirm(`Remove ${icao} from board?`)) {
+                await api.removeFavorite(icao);
+                renderBoard(container); // Re-render
+            }
+        });
+    });
+}
+
 function renderAboutPage(container) {
     container.innerHTML = `
         <div class="card" style="max-width: 800px; margin: 2rem auto;">
@@ -464,6 +550,7 @@ function renderAboutPage(container) {
             <h2>System Behavior</h2>
             <ul class="plain-english-list">
                 <li><strong>Public Mode:</strong> This instance is running in public read-only mode. User preferences like your default airport and theme are saved <strong>only in this browser</strong> using localStorage.</li>
+                <li><strong>Airport Board:</strong> Favorites saved to your Board are stored locally in your browser. Clearing your browser data or using a different device will result in a fresh Board.</li>
                 <li><strong>Operational Insights:</strong> Calculations such as crosswind components and favored runways are derived using standard trigonometry and are for advisory use only.</li>
                 <li><strong>Privacy:</strong> No personal data is collected. Your search history and preferences remain local to your device.</li>
             </ul>
@@ -601,6 +688,8 @@ async function renderDashboard(container, icao) {
     // Single aggregate call
     const data = await api.getDashboard(icao);
     const { brief, weather, runways, alternates: alts, hazards, airport: dir, coverage } = data;
+    const favorites = await api.getFavorites();
+    const isFavorite = favorites.some(f => f.ident === icao);
 
     container.innerHTML = `
         <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -608,7 +697,12 @@ async function renderDashboard(container, icao) {
                 <h1>${icao} - ${dir.name}</h1>
                 <div style="font-size: 0.9rem; color: var(--text-muted);">Dashboard Snapshot • ${utils.formatDate(new Date())}</div>
             </div>
-            <button id="dashboard-set-default" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Use ${icao} as Default</button>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: flex-end;">
+                <button id="dashboard-toggle-favorite" class="chip ${isFavorite ? 'success' : 'info'}" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">
+                    ${isFavorite ? '★ On Board' : '☆ Add to Board'}
+                </button>
+                <button id="dashboard-set-default" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Use ${icao} as Default</button>
+            </div>
         </div>
         <div id="dashboard-set-default-msg" style="text-align: right; color: var(--success); font-size: 0.85rem; margin-top: -0.5rem; margin-bottom: 1rem; display: none;">Saved!</div>
         <div class="grid">
@@ -622,6 +716,24 @@ async function renderDashboard(container, icao) {
             ${cards.renderOfficialResourcesCard(icao)}
         </div>
     `;
+
+    document.getElementById('dashboard-toggle-favorite').addEventListener('click', async () => {
+        const btn = document.getElementById('dashboard-toggle-favorite');
+        const favorites = await api.getFavorites();
+        const currentlyFavorite = favorites.some(f => f.ident === icao);
+        
+        if (currentlyFavorite) {
+            await api.removeFavorite(icao);
+            btn.innerText = '☆ Add to Board';
+            btn.classList.remove('success');
+            btn.classList.add('info');
+        } else {
+            await api.addFavorite(icao);
+            btn.innerText = '★ On Board';
+            btn.classList.remove('info');
+            btn.classList.add('success');
+        }
+    });
 
     document.getElementById('dashboard-set-default').addEventListener('click', async () => {
         const btn = document.getElementById('dashboard-set-default');

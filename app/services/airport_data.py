@@ -25,7 +25,7 @@ def get_airport_directory(icao: str) -> Optional[Dict[str, Any]]:
     try:
         with get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT ident, name, lat, lon, elevation_ft FROM airports WHERE ident = ?", (icao,))
+            cursor.execute("SELECT ident, iata_code, name, lat, lon, elevation_ft FROM airports WHERE ident = ?", (icao,))
             apt = cursor.fetchone()
             if not apt:
                 return None
@@ -35,6 +35,7 @@ def get_airport_directory(icao: str) -> Optional[Dict[str, Any]]:
             
             return {
                 "icao": apt["ident"],
+                "iata_code": apt["iata_code"],
                 "name": apt["name"],
                 "lat": apt["lat"],
                 "lon": apt["lon"],
@@ -50,6 +51,7 @@ def get_airport_directory(icao: str) -> Optional[Dict[str, Any]]:
         freqs = frequencies_data_fallback.get(icao, [])
         return {
             "icao": airport["icao"],
+            "iata_code": airport.get("iata_code"),
             "name": airport["name"],
             "lat": airport["lat"],
             "lon": airport["lon"],

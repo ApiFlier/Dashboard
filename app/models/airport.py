@@ -36,3 +36,20 @@ class AirportCoverage(BaseModel):
     nearby_weather_stations: List[NearbyWeatherStation] = []
     source: str = "OurAirports"
     warnings: List[str] = []
+
+class AirportSummary(BaseModel):
+    icao: str
+    iata_code: Optional[str] = None
+    name: str
+    flight_category: str
+    field_weather_available: bool
+    weather_status: str # available, unavailable, etc.
+    nearby_weather_used: bool
+    wind_summary: Optional[str] = None
+    favored_runway_end: Optional[str] = None
+    favored_runway_reason: Optional[str] = None
+    hazard_risk: str
+    has_runways: bool
+    has_frequencies: bool
+    generated_at: str
+    warnings: List[str] = []

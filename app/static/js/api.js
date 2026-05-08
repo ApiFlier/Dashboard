@@ -65,12 +65,26 @@ const api = {
         return fetch(`/api/recent`, { method: 'DELETE' });
     },
     async getFavorites() {
+        const settings = utils.getSettings();
+        if (settings.public_readonly_mode) {
+            return utils.getFavorites().map(ident => ({ ident, created_at: new Date().toISOString() }));
+        }
         return this._fetch(`/api/favorites`);
     },
     async addFavorite(icao) {
+        const settings = utils.getSettings();
+        if (settings.public_readonly_mode) {
+            utils.addFavorite(icao);
+            return { status: "ok" };
+        }
         return fetch(`/api/favorites/${icao}`, { method: 'POST' });
     },
     async removeFavorite(icao) {
+        const settings = utils.getSettings();
+        if (settings.public_readonly_mode) {
+            utils.removeFavorite(icao);
+            return { status: "ok" };
+        }
         return fetch(`/api/favorites/${icao}`, { method: 'DELETE' });
     },
     async getSettingsDefaults() {

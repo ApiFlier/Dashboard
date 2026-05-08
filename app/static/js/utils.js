@@ -69,6 +69,9 @@ const utils = {
         let favs = this.getFavorites();
         if (!favs.includes(icao)) {
             favs.push(icao);
+            if (favs.length > 12) {
+                favs = favs.slice(-12);
+            }
             localStorage.setItem('favorites', JSON.stringify(favs));
         }
     },
