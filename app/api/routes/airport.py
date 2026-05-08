@@ -59,7 +59,7 @@ async def get_dashboard_data(airport: str):
     tasks = [
         safe_task(weather.weather(airport)),
         safe_task(runways.runways(airport)),
-        safe_task(alternates.alternates(airport)),
+        safe_task(alternates.alternates(airport, limit=3, include_non_reporting=False)),
         safe_task(hazards.hazards(airport)),
         safe_task(brief.brief(airport)),
         safe_task(get_airport_coverage(airport))

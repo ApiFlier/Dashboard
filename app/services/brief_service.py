@@ -25,8 +25,8 @@ async def build_airport_brief(icao: str) -> AirportBrief:
     runway_data = await get_runways(icao)
     
     # 3. Alternates (limit to best 3)
-    alts = await find_alternates(directory["lat"], directory["lon"], icao)
-    best_alts = alts[:3] if alts else []
+    alts = await find_alternates(directory["lat"], directory["lon"], icao, limit=3)
+    best_alts = alts.alternates if alts and alts.alternates else []
     
     # 4. Hazards
     hazards = await get_hazards_for_airport(icao, directory["lat"], directory["lon"])

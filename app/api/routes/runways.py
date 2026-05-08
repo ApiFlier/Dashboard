@@ -82,12 +82,14 @@ async def runways(airport: str):
         if hw is not None and tw == 0.0:
             favored_candidates.append(cond)
 
-    favored = FavoredRunway(reason="Unknown")
+    favored = FavoredRunway(reason="No runway data")
     
-    if not metar:
-        favored.reason = "Favored runway unavailable because field wind is unavailable."
+    if not runways_raw:
+        favored.reason = "No runway data available."
+    elif not metar:
+        favored.reason = "No field wind available."
     elif wind_spd == 0:
-        favored.reason = "Winds calm. Any runway may be used."
+        favored.reason = "Calm. Any runway may be used."
     elif variable_wind:
         favored.reason = "Winds variable. Choose based on runway length or local procedures."
     elif favored_candidates:

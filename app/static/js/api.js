@@ -25,8 +25,8 @@ const api = {
     async getRunways(icao) {
         return this._fetch(`/api/airport/${icao}/runways`);
     },
-    async getAlternates(icao, radius = 75) {
-        return this._fetch(`/api/airport/${icao}/alternates?radius_nm=${radius}`);
+    async getAlternates(icao, radius = 75, limit = 10, includeNonReporting = false) {
+        return this._fetch(`/api/airport/${icao}/alternates?radius_nm=${radius}&limit=${limit}&include_non_reporting=${includeNonReporting}`);
     },
     async getHazards(icao, radius = 75) {
         return this._fetch(`/api/airport/${icao}/hazards?radius_nm=${radius}`);

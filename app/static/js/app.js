@@ -310,7 +310,7 @@ async function handleRoute() {
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
     
-    // 1. Sync backend settings if needed
+    // 1. Sync backend settings ONLY IF NOT LOADED or on settings page
     if (!settingsLoaded || route.type === 'settings') {
         try {
             const backendSettings = await api.getSettings();
@@ -368,13 +368,6 @@ async function handleRoute() {
 
     if (route.type === 'airport') {
         currentIcao = route.icao;
-        const routeKey = `airport-${route.icao}-${route.view}`;
-        
-        if (content.innerHTML === '' || content.querySelector('.loading') || content.dataset.route !== routeKey) {
-             content.innerHTML = '<div class="loading">Loading airport data...</div>';
-             content.dataset.route = routeKey;
-        }
-        
         await refreshCurrentView(false);
         return;
     }
@@ -502,18 +495,40 @@ async function renderBoard(container) {
     
     if (favorites.length === 0) {
         container.innerHTML = `
-            <div class="home-container">
-                <h1>Your Airport Board is empty.</h1>
-                <p>Add airports to monitor them here. Saved in this browser only.</p>
-                <div class="card" style="max-width: 500px; margin: 1.5rem auto; text-align: left; background: var(--card-bg-alt);">
-                    <p><strong>Add an airport:</strong></p>
-                    <div class="home-search" style="position: relative; margin-top: 1rem;">
-                        <input type="text" id="board-search" placeholder="Search ICAO, IATA, or City" autocomplete="off">
+            <div class="home-container" style="max-width: 800px; margin: 2rem auto; text-align: center;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Your Airport Board is empty</h1>
+                <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 2rem;">Add airports here to monitor their live weather and favored runways in one view.</p>
+                <div class="card" style="max-width: 500px; margin: 0 auto; text-align: left; background: var(--card-bg-alt); padding: 2rem; border: 1px solid var(--border-color);">
+                    <p style="margin-bottom: 1rem; font-weight: bold;">Add your first airport:</p>
+                    <div class="home-search" style="display: flex; gap: 0.5rem; position: relative;">
+                        <input type="text" id="board-empty-search" placeholder="ICAO, City, or Name (e.g. KPHL)" autocomplete="off" style="flex: 1; padding: 0.75rem;">
+                        <button id="board-empty-add-btn" class="chip info" style="border: none; cursor: pointer; padding: 0 1.5rem; font-weight: bold;">Add</button>
+                    </div>
+                    <div style="margin-top: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
+                        Tip: You can search by ICAO code, city name, or airport name.
                     </div>
                 </div>
             </div>
         `;
-        setupAutocomplete(document.getElementById('board-search'));
+        const input = document.getElementById('board-empty-search');
+        setupAutocomplete(input);
+        
+        const addFn = async () => {
+            const val = input.value.trim().toUpperCase();
+            if (val) {
+                try {
+                    await api.addFavorite(val);
+                    input.value = '';
+                    renderBoard(container);
+                } catch (e) {
+                    alert(`Failed to add ${val}: ${e.message}`);
+                }
+            }
+        };
+        
+        document.getElementById('board-empty-add-btn').addEventListener('click', addFn);
+        input.addEventListener('keypress', (e) => { if (e.key === 'Enter') addFn(); });
+        
         container.dataset.route = 'board';
         return;
     }
@@ -826,6 +841,10 @@ async function renderDashboard(container, icao) {
 }
 
 async function renderFullBrief(container, icao) {
+    container.innerHTML = `
+        <div class="page-header"><h1>${icao} Brief</h1></div>
+        <div class="loading">Generating operational brief for ${icao}...</div>
+    `;
     const data = await api.getBrief(icao);
     container.innerHTML = `
         <div class="page-header">
@@ -900,13 +919,18 @@ async function renderFullBrief(container, icao) {
 }
 
 async function renderDetailedWeather(container, icao) {
+    container.innerHTML = `
+        <div class="page-header"><h1>${icao} Weather</h1></div>
+        <div class="loading">Fetching detailed weather for ${icao}...</div>
+    `;
     const data = await api.getWeather(icao);
     const nearby = data.nearby_weather_stations || [];
-    
+
     container.innerHTML = `
         <div class="page-header">
             <h1>${icao} Weather</h1>
         </div>
+
         ${utils.renderWarnings(data.warnings)}
         <div class="grid">
             <div class="card">
@@ -976,6 +1000,10 @@ async function renderDetailedWeather(container, icao) {
 }
 
 async function renderDetailedRunways(container, icao) {
+    container.innerHTML = `
+        <div class="page-header"><h1>${icao} Runways</h1></div>
+        <div class="loading">Analyzing runway wind components for ${icao}...</div>
+    `;
     const data = await api.getRunways(icao);
     container.innerHTML = `
         <div class="page-header">
@@ -1042,52 +1070,111 @@ async function renderDetailedRunways(container, icao) {
     `;
 }
 
-async function renderDetailedAlternates(container, icao) {
+async function renderDetailedAlternates(container, icao, includeNonReporting = false) {
     const settings = utils.getSettings();
-    const data = await api.getAlternates(icao, settings.alternate_radius_nm);
-    container.innerHTML = `
-        <div class="page-header">
-            <h1>${icao} Alternates</h1>
-        </div>
-        <p style="margin-bottom: 1rem; font-style: italic;">Showing airports within ${settings.alternate_radius_nm} nm radius.</p>
-        <div class="card">
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Score</th>
-                            <th>Airport</th>
-                            <th>Distance</th>
-                            <th>Rules</th>
-                            <th>Winds</th>
-                            <th>Details</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.map(a => `
+    const { radius_nm } = settings;
+
+    try {
+        // Fetch up to 25 alternates (hard cap in backend)
+        const data = await api.getAlternates(icao, radius_nm, 25, includeNonReporting);
+        
+        const alternates = data.alternates || [];
+        const excluded = data.excluded_summary || {};
+        const noWeatherCount = excluded.no_weather || 0;
+        const totalConsidered = data.candidates_considered || 0;
+
+        container.innerHTML = `
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h1>${icao} Alternates</h1>
+                    <div style="font-size: 0.9rem; color: var(--text-muted);">
+                        Top ${includeNonReporting ? '' : 'reporting'} fields within ${radius_nm} nm. 
+                        (${data.reporting_candidates_count} reporting of ${totalConsidered} considered)
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.5rem; background: var(--card-bg-alt); padding: 0.5rem 1rem; border-radius: 20px; border: 1px solid var(--border-color);">
+                    <label style="font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem;">
+                        <input type="checkbox" id="toggle-non-reporting" ${includeNonReporting ? 'checked' : ''}>
+                        Show non-reporting fields
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="table-container">
+                    <table>
+                        <thead>
                             <tr>
-                                <td><span class="chip info">${a.score}</span></td>
-                                <td><strong>${a.icao}</strong><br><small>${a.name}</small></td>
-                                <td>${a.distance_nm} nm<br><small>${a.bearing_deg}°</small></td>
-                                <td>${utils.getFlightCategoryChip(a.flight_category)}</td>
-                                <td>${a.wind || 'N/A'}</td>
-                                <td>
-                                    <div style="font-size: 0.85rem;">${a.rank_reason}</div>
-                                    ${a.warnings.map(w => `<div style="color: var(--warning); font-size: 0.75rem;">⚠️ ${w}</div>`).join('')}
-                                </td>
+                                <th>Score</th>
+                                <th>Airport</th>
+                                <th>Distance</th>
+                                <th>Rules</th>
+                                <th>Winds</th>
+                                <th>Details</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${alternates.length > 0 ? alternates.map(a => `
+                                <tr>
+                                    <td><span class="chip ${a.score > 70 ? 'success' : a.score > 30 ? 'info' : 'warning'}">${a.score}</span></td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                            <strong>${a.icao}</strong>
+                                            <span style="font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase;">${a.type.replace('_airport', '')}</span>
+                                        </div>
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${a.name}</div>
+                                    </td>
+                                    <td>${a.distance_nm} nm<br><small>${a.bearing_deg}°</small></td>
+                                    <td>${utils.getFlightCategoryChip(a.flight_category)}</td>
+                                    <td>${a.wind || '<span style="color: var(--text-muted);">N/A</span>'}</td>
+                                    <td>
+                                        <div style="font-size: 0.8rem;">${a.rank_reason}</div>
+                                        ${a.warnings.map(w => `<div style="color: var(--warning); font-size: 0.7rem;">⚠️ ${w}</div>`).join('')}
+                                    </td>
+                                </tr>
+                            `).join('') : `
+                                <tr><td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                                    <div style="font-size: 1.2rem; margin-bottom: 0.5rem;">No suitable alternates found</div>
+                                    <p>Try increasing the search radius in settings or enabling non-reporting fields.</p>
+                                </td></tr>
+                            `}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                    <div style="font-size: 0.85rem; color: var(--text-muted);">
+                        <strong>Exclusion Summary:</strong> 
+                        ${noWeatherCount} no weather, 
+                        ${excluded.no_runways || 0} no runways, 
+                        ${excluded.closed_or_unsupported || 0} closed/unsupported
+                    </div>
+                    <div class="warning-callout" style="font-size: 0.75rem; border-left-color: var(--text-muted); margin: 0; padding: 0.5rem 1rem;">
+                        Operational awareness only. Always verify data in official publications.
+                    </div>
+                </div>
             </div>
-            <div class="warning-callout" style="margin-top: 2rem; font-size: 0.8rem;">
-                Operational comparison only. Not legal alternate planning.
-            </div>
-        </div>
-    `;
+        `;
+
+        // Attach toggle handler
+        const toggle = document.getElementById('toggle-non-reporting');
+        if (toggle) {
+            toggle.addEventListener('change', (e) => {
+                renderDetailedAlternates(container, icao, e.target.checked);
+            });
+        }
+
+    } catch (e) {
+        console.error('Failed to render alternates:', e);
+        container.innerHTML = `<div class="card danger"><h2>Failed to load alternates</h2><p>${e.message}</p></div>`;
+    }
 }
 
 async function renderDetailedHazards(container, icao) {
+    container.innerHTML = `
+        <div class="page-header"><h1>${icao} Hazards & Alerts</h1></div>
+        <div class="loading">Fetching regional hazards and convective awareness for ${icao}...</div>
+    `;
     const data = await api.getHazards(icao);
     container.innerHTML = `
         <div class="page-header">

@@ -463,8 +463,8 @@ const cards = {
         return html;
     },
 
-    renderAlternatesCard(alternates, icao) {
-        if (!alternates) {
+    renderAlternatesCard(data, icao) {
+        if (!data || data.error) {
             return `
                 <div class="card">
                     <h2>Top Alternates</h2>
@@ -472,6 +472,9 @@ const cards = {
                 </div>
             `;
         }
+        
+        const alternates = Array.isArray(data.alternates) ? data.alternates : [];
+        
         let html = `
             <div class="card">
                 <h2>Top Alternates</h2>
@@ -488,16 +491,20 @@ const cards = {
                         <tbody>
         `;
 
-        alternates.slice(0, 5).forEach(a => {
-            html += `
-                <tr>
-                    <td><strong>${a.icao}</strong></td>
-                    <td>${a.distance_nm}nm</td>
-                    <td>${utils.getFlightCategoryChip(a.flight_category)}</td>
-                    <td style="font-size: 0.8rem;">${a.wind || 'N/A'}</td>
-                </tr>
-            `;
-        });
+        if (alternates.length === 0) {
+            html += '<tr><td colspan="4" style="text-align: center; padding: 1rem; color: var(--text-muted);">No reporting alternates found nearby.</td></tr>';
+        } else {
+            alternates.slice(0, 5).forEach(a => {
+                html += `
+                    <tr>
+                        <td><strong>${a.icao}</strong></td>
+                        <td>${a.distance_nm}nm</td>
+                        <td>${utils.getFlightCategoryChip(a.flight_category)}</td>
+                        <td style="font-size: 0.8rem;">${a.wind || 'N/A'}</td>
+                    </tr>
+                `;
+            });
+        }
 
         html += `
                         </tbody>
