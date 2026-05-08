@@ -70,42 +70,99 @@ function setupAutocomplete(input) {
     input.parentNode.appendChild(container);
 
     let debounceTimer = null;
+    let selectedIndex = -1;
+    let suggestions = [];
+
+    const renderSuggestions = () => {
+        if (suggestions.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.innerHTML = suggestions.map((a, i) => `
+            <div class="suggestion-item ${i === selectedIndex ? 'selected' : ''}" data-icao="${a.ident}" data-index="${i}">
+                <div class="suggestion-header">
+                    <span class="suggestion-icao">${a.ident}</span>
+                    ${a.iata_code ? `<span class="suggestion-iata">${a.iata_code}</span>` : ''}
+                </div>
+                <div class="suggestion-name">${a.name}</div>
+                ${a.city ? `<div class="suggestion-location">${a.city}, ${a.state || ''}</div>` : ''}
+            </div>
+        `).join('');
+        container.style.display = 'block';
+    };
+
+    const handleSelect = (icao) => {
+        input.value = icao;
+        container.style.display = 'none';
+        
+        // Handle selection based on which input it is
+        if (input.id === 'setup-search') {
+            // Home/Setup page logic
+            const btn = document.getElementById('setup-save-btn');
+            if (btn) btn.disabled = false;
+        } else if (input.id === 'set-default-apt') {
+            // Settings page logic - no auto-nav
+        } else {
+            // Header search logic
+            navigateToAirport(icao);
+        }
+    };
 
     input.addEventListener('input', () => {
         clearTimeout(debounceTimer);
         const q = input.value.trim();
+        
         if (q.length < 2) {
             container.style.display = 'none';
+            suggestions = [];
+            selectedIndex = -1;
             return;
         }
 
         debounceTimer = setTimeout(async () => {
             try {
-                const results = await api.searchAirports(q);
-                if (results.length > 0) {
-                    container.innerHTML = results.map(a => `
-                        <div class="suggestion-item" data-icao="${a.icao}">
-                            <span class="suggestion-icao">${a.icao}</span>
-                            <span class="suggestion-name">${a.name}</span>
-                        </div>
-                    `).join('');
-                    container.style.display = 'block';
-                } else {
-                    container.style.display = 'none';
-                }
+                // Fetch up to 10 suggestions
+                const results = await api.searchAirports(q, 10);
+                suggestions = results;
+                selectedIndex = -1;
+                renderSuggestions();
             } catch (e) {
                 console.error('Search failed', e);
             }
-        }, 300);
+        }, 250);
+    });
+
+    input.addEventListener('keydown', (e) => {
+        if (container.style.display === 'none') return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex + 1) % suggestions.length;
+            renderSuggestions();
+            const selected = container.querySelector('.selected');
+            if (selected) selected.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            selectedIndex = (selectedIndex - 1 + suggestions.length) % suggestions.length;
+            renderSuggestions();
+            const selected = container.querySelector('.selected');
+            if (selected) selected.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            if (selectedIndex >= 0) {
+                e.preventDefault();
+                handleSelect(suggestions[selectedIndex].ident);
+            }
+        } else if (e.key === 'Escape') {
+            container.style.display = 'none';
+        }
     });
 
     container.addEventListener('click', (e) => {
         const item = e.target.closest('.suggestion-item');
         if (item) {
             const icao = item.dataset.icao;
-            input.value = icao;
-            container.style.display = 'none';
-            navigateToAirport(icao);
+            handleSelect(icao);
         }
     });
 
@@ -277,6 +334,14 @@ async function handleRoute() {
         renderSettings(content);
         return;
     }
+
+    if (hash === '/about') {
+        stopRefreshTimer();
+        statusBar.style.display = 'none';
+        updateNavLinks(currentIcao);
+        renderAboutPage(content);
+        return;
+    }
 }
 
 async function refreshCurrentView(isManual = false) {
@@ -332,9 +397,9 @@ async function refreshCurrentView(isManual = false) {
             if (e.status === 404) {
                 content.innerHTML = `
                     <div class="card" style="max-width: 600px; margin: 2rem auto; text-align: center;">
-                        <h2>Airport Not Found</h2>
-                        <p>The airport <strong>${icao}</strong> was not found in our database.</p>
-                        <p style="font-size: 0.9rem; color: var(--text-muted);">Please verify the ICAO code and try again.</p>
+                        <h2>Airport Not Found in Reference Database</h2>
+                        <p>The airport <strong>${icao}</strong> was not found in our current OurAirports dataset (16k+ fields).</p>
+                        <p style="font-size: 0.9rem; color: var(--text-muted);">Please verify the ICAO code or try searching by city/name.</p>
                         <br>
                         <button onclick="window.location.hash = '/search'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Search</button>
                     </div>
@@ -348,7 +413,7 @@ async function refreshCurrentView(isManual = false) {
                             <strong>Technical Details:</strong><br>
                             Status: ${e.status || 'Network Error'}<br>
                             Endpoint: ${e.url || 'N/A'}<br>
-                            Message: ${e.message || 'Unknown failure'}
+                            Message: ${e.message || 'System error'}
                         </div>
                         <br>
                         <button onclick="window.location.hash = '/'" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Return to Dashboard</button>
@@ -376,6 +441,39 @@ async function refreshCurrentView(isManual = false) {
     }
 }
 
+
+function renderAboutPage(container) {
+    container.innerHTML = `
+        <div class="card" style="max-width: 800px; margin: 2rem auto;">
+            <h1>About AirfieldOps</h1>
+            <p>AirfieldOps is a situational awareness tool designed for pilots, dispatchers, and aviation enthusiasts. It aggregates live weather, runway geometry, and regional hazards into a single, cohesive dashboard.</p>
+            
+            <div class="warning-callout" style="margin: 1.5rem 0;">
+                <strong>⚠️ ADVISORY ONLY</strong>
+                <p>This application is for situational awareness and advisory use only. It is NOT for certified flight planning, dispatch, release, navigation, or operational control. Always verify data in official publications and certified briefings.</p>
+            </div>
+
+            <h2>Data Sources</h2>
+            <ul class="plain-english-list">
+                <li><strong>Weather (METAR/TAF):</strong> Real-time data sourced from <a href="https://aviationweather.gov" target="_blank">AviationWeather.gov</a>.</li>
+                <li><strong>Hazards (SIGMET/NWS):</strong> Regional alerts and SIGMETs sourced from <a href="https://weather.gov" target="_blank">NWS api.weather.gov</a>.</li>
+                <li><strong>Reference Data:</strong> Airport locations, runways, and frequencies are sourced from the <a href="https://ourairports.com" target="_blank">OurAirports</a> community dataset and curated overrides.</li>
+                <li><strong>Official Resources:</strong> Links provided to FAA Digital Terminal Procedures and Chart Supplements are for convenience and direct to official FAA servers.</li>
+            </ul>
+
+            <h2>System Behavior</h2>
+            <ul class="plain-english-list">
+                <li><strong>Public Mode:</strong> This instance is running in public read-only mode. User preferences like your default airport and theme are saved <strong>only in this browser</strong> using localStorage.</li>
+                <li><strong>Operational Insights:</strong> Calculations such as crosswind components and favored runways are derived using standard trigonometry and are for advisory use only.</li>
+                <li><strong>Privacy:</strong> No personal data is collected. Your search history and preferences remain local to your device.</li>
+            </ul>
+            
+            <div style="margin-top: 2rem; text-align: center;">
+                <button onclick="window.history.back()" class="chip info" style="border:none; padding: 0.5rem 1rem; cursor:pointer;">Go Back</button>
+            </div>
+        </div>
+    `;
+}
 
 function renderSearch(container) {
     const recent = utils.getRecentAirports();
@@ -422,14 +520,23 @@ function renderFirstRun(container) {
     container.innerHTML = `
         <div class="home-container">
             <h1>Welcome to AirfieldOps</h1>
-            <p>To get started, please choose your default airport.</p>
-            <div class="home-search" style="position: relative;">
-                <input type="text" id="setup-search" placeholder="Enter Airport ICAO or Name (e.g. KAGC)" autocomplete="off">
-                <button id="setup-save-btn" disabled>Save and Start</button>
+            <p>Your aviation situational awareness dashboard.</p>
+            
+            <div class="card" style="max-width: 500px; margin: 1.5rem auto; text-align: left; background: var(--card-bg-alt);">
+                <p><strong>To get started, choose your home airport.</strong></p>
+                <div class="home-search" style="position: relative; margin-top: 1rem;">
+                    <input type="text" id="setup-search" placeholder="Search ICAO, IATA, or City (e.g. KAGC)" autocomplete="off">
+                    <button id="setup-save-btn" disabled>Start</button>
+                </div>
+                <div id="setup-error" style="color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-border); padding: 0.5rem; margin-top: 10px; display: none; border-radius: 4px;"></div>
+                
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1.5rem;">
+                    <strong>Privacy Note:</strong> This preference is saved <strong>only in your browser</strong>. This public instance does not store your settings on the server.
+                </p>
             </div>
-            <div id="setup-error" style="color: var(--danger-text); background: var(--danger-bg); border: 1px solid var(--danger-border); padding: 0.5rem; margin-top: 10px; display: none; border-radius: 4px;"></div>
-            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 1rem;">
-                This can be changed later in Settings.
+            
+            <p style="color: var(--text-muted); font-size: 0.8rem;">
+                Advisory use only. <a href="#/about" style="color: inherit; text-decoration: underline;">Read more about our data sources.</a>
             </p>
         </div>
     `;
@@ -493,7 +600,7 @@ function renderFirstRun(container) {
 async function renderDashboard(container, icao) {
     // Single aggregate call
     const data = await api.getDashboard(icao);
-    const { brief, weather, runways, alternates: alts, hazards, airport: dir } = data;
+    const { brief, weather, runways, alternates: alts, hazards, airport: dir, coverage } = data;
 
     container.innerHTML = `
         <div class="page-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
@@ -511,6 +618,7 @@ async function renderDashboard(container, icao) {
             ${cards.renderHazardsCard(hazards)}
             ${cards.renderAlternatesCard(alts, icao)}
             ${cards.renderDirectoryCard(dir)}
+            ${cards.renderCoverageCard(coverage)}
             ${cards.renderOfficialResourcesCard(icao)}
         </div>
     `;
@@ -620,6 +728,8 @@ async function renderFullBrief(container, icao) {
 
 async function renderDetailedWeather(container, icao) {
     const data = await api.getWeather(icao);
+    const nearby = data.nearby_weather_stations || [];
+    
     container.innerHTML = `
         <div class="page-header">
             <h1>${icao} Weather</h1>
@@ -640,7 +750,37 @@ async function renderDetailedWeather(container, icao) {
                         <tr><th>Altimeter</th><td>${data.metar.altimeter_in_hg ?? 'N/A'} IN HG</td></tr>
                         <tr><th>Observed At</th><td>${utils.formatDate(data.metar.observed_at)}</td></tr>
                     </table>
-                ` : '<p>No METAR available</p>'}
+                ` : `
+                    <p style="color: var(--warning); font-weight: bold;">Field METAR unavailable at this time.</p>
+                    ${nearby.length > 0 ? `
+                        <h3>Nearby Reporting Weather</h3>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">Not field conditions. Use for situational awareness only.</p>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Station</th>
+                                        <th>Dist</th>
+                                        <th>Rules</th>
+                                        <th>Wind</th>
+                                        <th>Observed</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${nearby.map(s => `
+                                        <tr>
+                                            <td><strong>${s.ident}</strong><br><small>${s.name}</small></td>
+                                            <td>${s.distance_nm} nm<br><small>${s.bearing_deg}°</small></td>
+                                            <td>${utils.getFlightCategoryChip(s.flight_category)}</td>
+                                            <td>${s.wind || 'N/A'}</td>
+                                            <td>${utils.formatDate(s.observed_at)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : '<p>No nearby reporting weather available.</p>'}
+                `}
             </div>
             <div class="card">
                 <h2>Forecast (TAF)</h2>
@@ -876,7 +1016,8 @@ async function renderSettings(content) {
     
     const publicModeNotice = settings.public_readonly_mode ? `
         <div class="warning-callout" style="margin-bottom: 1.5rem; border-left-color: var(--accent);">
-            <strong>Public Mode:</strong> Preferences are saved in this browser only.
+            <strong>Public Read-Only Mode Active</strong>
+            <p style="font-size: 0.85rem; margin-top: 0.25rem;">Preferences are saved in this browser only. Shared backend settings cannot be modified publicly.</p>
         </div>
     ` : '';
 
@@ -909,19 +1050,25 @@ async function renderSettings(content) {
             </div>
 
             <div class="card">
-                <h2>System State</h2>
+                <h2>System & Data Status</h2>
                 <div style="font-size: 0.9rem;">
                     <table style="width: 100%;">
-                        <tr><td><strong>Airports</strong></td><td style="text-align: right;">${refStatus.airport_count}</td></tr>
-                        <tr><td><strong>Runways</strong></td><td style="text-align: right;">${refStatus.runway_count}</td></tr>
+                        <tr><td><strong>Airports</strong></td><td style="text-align: right;">${refStatus.airport_count.toLocaleString()}</td></tr>
+                        <tr><td><strong>Runways</strong></td><td style="text-align: right;">${refStatus.runway_count.toLocaleString()}</td></tr>
+                        <tr><td><strong>Frequencies</strong></td><td style="text-align: right;">${refStatus.frequency_count.toLocaleString()}</td></tr>
                         <tr><td><strong>Source</strong></td><td style="text-align: right;">${refStatus.source}</td></tr>
-                        <tr><td><strong>Data Version</strong></td><td style="text-align: right;">${refStatus.data_version}</td></tr>
+                        <tr><td><strong>Last Import</strong></td><td style="text-align: right;">${refStatus.last_imported_at === 'unknown' ? 'N/A' : utils.formatDate(refStatus.last_imported_at)}</td></tr>
+                        <tr><td><strong>Mode</strong></td><td style="text-align: right;">${refStatus.public_readonly_mode ? 'Public Read-Only' : 'Private'}</td></tr>
+                        <tr><td><strong>Debug APIs</strong></td><td style="text-align: right;">${refStatus.debug_public_endpoints ? 'Enabled' : 'Disabled'}</td></tr>
                     </table>
                 </div>
-                <h2 style="margin-top: 2rem;">Resources</h2>
+                <div style="margin-top: 1rem; font-size: 0.75rem; color: var(--text-muted);">
+                    <a href="#/about" style="color: inherit; text-decoration: underline;">Learn more about our data sources →</a>
+                </div>
+                <h2 style="margin-top: 2rem;">Official Resources</h2>
                 <ul class="plain-english-list">
-                    <li><a href="https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/" target="_blank">FAA Diagrams</a></li>
-                    <li><a href="https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dafd/" target="_blank">Chart Supplements</a></li>
+                    <li><a href="https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/" target="_blank">FAA Terminal Procedures</a></li>
+                    <li><a href="https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dafd/" target="_blank">FAA Chart Supplements</a></li>
                 </ul>
             </div>
         </div>
@@ -968,4 +1115,6 @@ async function renderSettings(content) {
             document.getElementById('set-default-apt').value = currentIcao;
         });
     }
+
+    setupAutocomplete(document.getElementById('set-default-apt'));
 }

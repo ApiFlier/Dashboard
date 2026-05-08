@@ -201,7 +201,7 @@ header {
     border: 1px solid var(--border-color);
     border-radius: 0 0 4px 4px;
     z-index: 1000;
-    max-height: 250px;
+    max-height: 300px;
     overflow-y: auto;
     box-shadow: var(--card-shadow);
     color: var(--text);
@@ -213,16 +213,24 @@ header {
     border-bottom: 1px solid var(--border-color);
     font-size: 0.9rem;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 0.2rem;
 }
 
 .suggestion-item:last-child {
     border-bottom: none;
 }
 
-.suggestion-item:hover, .suggestion-item.active {
+.suggestion-item:hover, .suggestion-item.selected {
     background: var(--card-bg-alt);
+    border-left: 4px solid var(--accent);
+    padding-left: calc(1rem - 4px);
+}
+
+.suggestion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .suggestion-icao {
@@ -230,13 +238,25 @@ header {
     color: var(--accent);
 }
 
-.suggestion-name {
+.suggestion-iata {
+    font-size: 0.75rem;
     color: var(--text-muted);
-    font-size: 0.8rem;
+    background: var(--chip-bg);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+}
+
+.suggestion-name {
+    color: var(--text);
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-left: 1rem;
+}
+
+.suggestion-location {
+    color: var(--text-muted);
+    font-size: 0.75rem;
 }
 
 .official-resources-card a {

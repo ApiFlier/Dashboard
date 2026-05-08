@@ -11,7 +11,7 @@ def test_search_airports(client):
     response = client.get("/api/airports/search?q=KAGC")
     assert response.status_code == 200
     assert len(response.json()) > 0
-    assert response.json()[0]["icao"] == "KAGC"
+    assert response.json()[0]["ident"] == "KAGC"
 
 def test_airport_directory(client):
     response = client.get("/api/airport/KAGC/directory")

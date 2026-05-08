@@ -63,5 +63,7 @@ async def get_reference_status():
             "db_path": settings.DB_PATH,
             "state_dir": settings.STATE_DIR,
             "db_exists": os.path.exists(settings.DB_PATH),
+            "public_readonly_mode": settings.PUBLIC_READONLY_MODE,
+            "debug_public_endpoints": settings.DEBUG_PUBLIC_ENDPOINTS,
             "warnings": warnings
         }

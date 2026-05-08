@@ -170,7 +170,7 @@ const cards = {
         if (drawnCount === 0) {
             return `
                 <div class="runway-sketch-container" style="text-align: center; margin: 1rem 0; background: var(--card-bg-alt); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; color: var(--text);">
-                    <p>Runway sketch unavailable. Runway table remains available below.</p>
+                    <p>Interactive runway sketch unavailable due to missing reference coordinates. See runway table below.</p>
                 </div>
             `;
         }
@@ -215,7 +215,7 @@ const cards = {
                 <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; font-style: italic;">
                     ${isAccurate ? 'Layout based on stored runway geometry.' : 'Layout based on heading/length only. Geometry is approximate.'}
                 </div>
-                ${hasInvalidGeometry ? '<div style="font-size: 0.75rem; color: var(--warning); margin-top: 0.25rem;">Some geometry missing.</div>' : ''}
+                ${hasInvalidGeometry ? '<div style="font-size: 0.75rem; color: var(--warning); margin-top: 0.25rem;">Reference geometry missing for some runways.</div>' : ''}
                 <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.25rem; opacity: 0.8;">
                     Simplified airport layout. Not for navigation.
                 </div>
@@ -255,10 +255,14 @@ const cards = {
     renderWeatherCard(weather) {
         const metar = weather.metar;
         const taf = weather.taf;
+        const nearby = weather.nearby_weather_stations || [];
         
         let html = `
             <div class="card">
-                <h2>Weather</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h2 style="margin: 0;">Weather</h2>
+                    <a href="#/about" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: underline;">About this data</a>
+                </div>
                 ${utils.renderWarnings(weather.warnings)}
         `;
 
@@ -266,7 +270,7 @@ const cards = {
             html += `
                 <div style="margin-bottom: 1rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                        <strong>METAR</strong>
+                        <strong>Field METAR</strong>
                         ${utils.getFlightCategoryChip(metar.flight_category)}
                     </div>
                     <code style="display: block; background: var(--code-bg); color: var(--code-text); padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.85rem; border-radius: 4px;">${metar.raw}</code>
@@ -280,7 +284,36 @@ const cards = {
                 </div>
             `;
         } else {
-            html += '<p>METAR not available</p>';
+            html += `
+                <div style="margin-bottom: 1rem;">
+                    <p style="color: var(--warning); font-weight: bold; margin-bottom: 0.5rem;">Field METAR unavailable at this time.</p>
+                    ${nearby.length > 0 ? `
+                        <p style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Nearby reporting weather:</strong> (Not field conditions)</p>
+                        <div class="table-container">
+                            <table style="font-size: 0.85rem;">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Dist</th>
+                                        <th>Rules</th>
+                                        <th>Wind</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${nearby.map(s => `
+                                        <tr>
+                                            <td><strong>${s.ident}</strong></td>
+                                            <td>${s.distance_nm}nm</td>
+                                            <td>${utils.getFlightCategoryChip(s.flight_category)}</td>
+                                            <td>${s.wind || 'N/A'}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : '<p>No nearby weather reporting available.</p>'}
+                </div>
+            `;
         }
 
         if (taf) {
@@ -291,6 +324,8 @@ const cards = {
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Issued: ${utils.formatDate(taf.issued_at)}</div>
                 </div>
             `;
+        } else if (!metar && nearby.length === 0) {
+             // Already showed unavailable message
         } else {
             html += '<p>TAF not available</p>';
         }
@@ -302,6 +337,37 @@ const cards = {
             </div>
         `;
         return html;
+    },
+
+    renderCoverageCard(coverage) {
+        if (!coverage) return '';
+        
+        const statusIcon = (avail) => avail ? '✅' : '❌';
+        
+        return `
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                    <h2 style="margin: 0;">Data Coverage</h2>
+                    <a href="#/about" style="font-size: 0.75rem; color: var(--text-muted); text-decoration: underline;">About this data</a>
+                </div>
+                <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.9rem;">
+                    <div>Field METAR: ${statusIcon(coverage.has_field_metar)}</div>
+                    <div>TAF: ${statusIcon(coverage.has_taf)}</div>
+                    <div>Runways: ${statusIcon(coverage.has_runways)}</div>
+                    <div>Frequencies: ${statusIcon(coverage.has_frequencies)}</div>
+                    <div>Runway Geometry: ${coverage.has_runway_geometry ? '✅ Accurate' : '⚠️ Approx'}</div>
+                </div>
+                ${coverage.nearby_weather_stations && coverage.nearby_weather_stations.length > 0 && !coverage.has_field_metar ? `
+                    <div style="margin-top: 1rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);">
+                        <strong>Nearby Reporting Stations:</strong>
+                        <ul style="padding-left: 1.2rem; font-size: 0.85rem; margin-top: 0.5rem;">
+                            ${coverage.nearby_weather_stations.map(s => `<li>${s.ident} (${s.distance_nm} nm): ${utils.getFlightCategoryChip(s.flight_category)}</li>`).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Data source: ${coverage.source}</div>
+            </div>
+        `;
     },
 
     renderRunwaysCard(analysis) {
@@ -442,13 +508,13 @@ const cards = {
         return `
             <div class="card">
                 <h2>Airport Directory</h2>
-                <p class="warning">Directory information unavailable.</p>
+                <p class="warning">Reference directory information unavailable for this airport.</p>
             </div>
         `;
     }
 
     const icao = airport.icao || airport.ident || airport.airport || "";
-    const name = airport.name || "Unknown airport";
+    const name = airport.name || "Information unavailable";
     const city = airport.city || "";
     const state = airport.state || "";
     const elevation = airport.elevation_ft ?? airport.elevation ?? "N/A";

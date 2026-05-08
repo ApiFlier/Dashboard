@@ -3,12 +3,13 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 from app.services.airport_data import search_airports, get_airport_directory
 from app.api.routes import weather, runways, alternates, hazards, brief
+from app.services.coverage_service import get_airport_coverage
 
 router = APIRouter()
 
 @router.get("/airports/search")
-async def search(q: str = ""):
-    return search_airports(q)
+async def search(q: str = "", limit: int = 10):
+    return search_airports(q, limit)
 
 @router.get("/airport/{airport}/directory")
 async def directory(airport: str):
@@ -16,6 +17,10 @@ async def directory(airport: str):
     if not data:
         raise HTTPException(status_code=404, detail="Airport not found")
     return data
+
+@router.get("/airport/{airport}/coverage")
+async def coverage(airport: str):
+    return await get_airport_coverage(airport)
 
 @router.get("/airport/{airport}/dashboard")
 async def get_dashboard_data(airport: str):
@@ -25,13 +30,13 @@ async def get_dashboard_data(airport: str):
         raise HTTPException(status_code=404, detail="Airport not found")
 
     # Fetch everything concurrently
-    # Note: we are calling the route functions directly as they contain the logic
     tasks = [
         weather.weather(airport),
         runways.runways(airport),
         alternates.alternates(airport),
         hazards.hazards(airport),
-        brief.brief(airport)
+        brief.brief(airport),
+        get_airport_coverage(airport)
     ]
     
     try:
@@ -43,7 +48,8 @@ async def get_dashboard_data(airport: str):
             "runways": results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
             "alternates": results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
             "hazards": results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
-            "brief": results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])}
+            "brief": results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
+            "coverage": results[5] if not isinstance(results[5], Exception) else {"error": str(results[5])}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to aggregate dashboard data: {str(e)}")

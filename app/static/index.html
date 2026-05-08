@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AirfieldOps Core</title>
-    <link rel="stylesheet" href="/static/css/styles.css?v=20260507-13">
+    <title>AirfieldOps - Aviation Situational Awareness</title>
+    <meta name="description" content="AirfieldOps provides real-time aviation situational awareness, weather reporting, and runway analysis for pilots and enthusiasts.">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="stylesheet" href="/static/css/styles.css?v=20260507-15">
 </head>
 <body>
     <header>
-        <a href="#/" class="logo">AirfieldOps Core</a>
+        <a href="#/" class="logo">AirfieldOps</a>
         <div id="status-bar" class="status-bar" style="display: none;">
             <span id="last-updated"></span>
             <button id="refresh-btn" class="refresh-btn">Refresh</button>
@@ -34,13 +36,16 @@
     </main>
 
     <footer>
-        <p><strong>Advisory display only.</strong> Not for certified flight planning, dispatch, release, or operational control.</p>
-        <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.7;">Data sources: AviationWeather.gov, NWS api.weather.gov</p>
+        <p><strong>Advisory display only.</strong> Not for certified flight planning, dispatch, release, navigation, or operational control.</p>
+        <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.7;">
+            <a href="#/about" style="color: inherit; text-decoration: underline;">About & Data Sources</a> | 
+            Data sources: AviationWeather.gov, NWS api.weather.gov, OurAirports
+        </p>
     </footer>
 
-    <script src="/static/js/utils.js?v=20260507-13"></script>
-    <script src="/static/js/api.js?v=20260507-13"></script>
-    <script src="/static/js/cards.js?v=20260507-13"></script>
-    <script src="/static/js/app.js?v=20260507-13"></script>
+    <script src="/static/js/utils.js?v=20260507-15"></script>
+    <script src="/static/js/api.js?v=20260507-15"></script>
+    <script src="/static/js/cards.js?v=20260507-15"></script>
+    <script src="/static/js/app.js?v=20260507-15"></script>
 </body>
 </html>

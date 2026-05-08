@@ -12,7 +12,7 @@ def test_db(tmp_path):
     cursor.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
     cursor.execute("""
         CREATE TABLE airports (
-            ident TEXT PRIMARY KEY, name TEXT, city TEXT, state TEXT, country TEXT, 
+            ident TEXT PRIMARY KEY, name TEXT, iata_code TEXT, type TEXT, city TEXT, state TEXT, country TEXT, 
             lat REAL, lon REAL, elevation_ft INTEGER, source TEXT, updated_at TEXT
         )
     """)

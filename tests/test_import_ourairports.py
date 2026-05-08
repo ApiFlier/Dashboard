@@ -13,7 +13,7 @@ def temp_db():
         conn.execute("CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)")
         conn.execute("""
             CREATE TABLE airports (
-                ident TEXT PRIMARY KEY, name TEXT, city TEXT, state TEXT, country TEXT, 
+                ident TEXT PRIMARY KEY, name TEXT, iata_code TEXT, type TEXT, city TEXT, state TEXT, country TEXT, 
                 lat REAL, lon REAL, elevation_ft INTEGER, source TEXT, updated_at TEXT
             )
         """)
@@ -42,10 +42,10 @@ def sample_csvs(tmp_path):
     
     airports_csv = data_dir / "airports.csv"
     with open(airports_csv, "w") as f:
-        f.write("ident,type,name,latitude_deg,longitude_deg,elevation_ft,iso_country,iso_region,municipality,scheduled_service\n")
-        f.write("KLAX,large_airport,Los Angeles International Airport,33.9425,-118.408,125,US,US-CA,Los Angeles,yes\n")
-        f.write("KPHL,large_airport,Philadelphia International Airport,39.8719,-75.2411,36,US,US-PA,Philadelphia,yes\n")
-        f.write("TEST,small_airport,Test Strip,0,0,0,US,US-ZZ,Test,no\n")
+        f.write("ident,type,name,latitude_deg,longitude_deg,elevation_ft,iso_country,iso_region,municipality,scheduled_service,iata_code\n")
+        f.write("KLAX,large_airport,Los Angeles International Airport,33.9425,-118.408,125,US,US-CA,Los Angeles,yes,LAX\n")
+        f.write("KPHL,large_airport,Philadelphia International Airport,39.8719,-75.2411,36,US,US-PA,Philadelphia,yes,PHL\n")
+        f.write("TEST,small_airport,Test Strip,0,0,0,US,US-ZZ,Test,no,\n")
     
     runways_csv = data_dir / "runways.csv"
     with open(runways_csv, "w") as f:
@@ -72,6 +72,7 @@ def test_import_basic(temp_db, sample_csvs):
     assert len(airports) == 3
     klax = next(a for a in airports if a['ident'] == 'KLAX')
     assert klax['name'] == "Los Angeles International Airport"
+    assert klax['iata_code'] == "LAX"
     
     # Check runways
     cursor.execute("SELECT * FROM runways WHERE airport_ident = 'KLAX'")
@@ -104,7 +105,7 @@ def test_import_curated_protection(temp_db, sample_csvs):
     # Add KAVP to sample CSVs
     airports_csv = sample_csvs / "airports.csv"
     with open(airports_csv, "a") as f:
-        f.write("KAVP,large_airport,Wilkes-Barre/Scranton International Airport,41.3385,-75.7234,962,US,US-PA,Scranton,yes\n")
+        f.write("KAVP,large_airport,Wilkes-Barre/Scranton International Airport,41.3385,-75.7234,962,US,US-PA,Scranton,yes,AVP\n")
     
     runways_csv = sample_csvs / "runways.csv"
     with open(runways_csv, "a") as f:

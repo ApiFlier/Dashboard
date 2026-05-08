@@ -78,6 +78,9 @@ def parse_taf(raw_taf: dict) -> NormalizedTaf:
         forecast_periods=forecast_periods
     )
 
+from app.services.airport_data import get_airport_directory
+from app.services.coverage_service import find_nearest_reporting_stations
+
 @router.get("/airport/{airport}/weather", response_model=NormalizedWeather)
 async def weather(airport: str):
     airport = airport.upper()
@@ -119,11 +122,18 @@ async def weather(airport: str):
     else:
         if not any("Forecast fetch failed" in w for w in warnings):
             warnings.append("TAF unavailable")
+
+    nearby_stations = []
+    if metar is None:
+        apt = get_airport_directory(airport)
+        if apt:
+            nearby_stations = await find_nearest_reporting_stations(apt["lat"], apt["lon"], airport)
     
     return NormalizedWeather(
         airport=airport,
         generated_at=now,
         metar=metar,
         taf=taf,
+        nearby_weather_stations=nearby_stations,
         warnings=warnings
     )

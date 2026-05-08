@@ -34,6 +34,9 @@ const api = {
     async getDirectory(icao) {
         return this._fetch(`/api/airport/${icao}/directory`);
     },
+    async getCoverage(icao) {
+        return this._fetch(`/api/airport/${icao}/coverage`);
+    },
     async getDashboard(icao) {
         return this._fetch(`/api/airport/${icao}/dashboard`);
     },
@@ -73,7 +76,7 @@ const api = {
     async getSettingsDefaults() {
         return this._fetch(`/api/settings/defaults`);
     },
-    async searchAirports(q) {
-        return this._fetch(`/api/airports/search?q=${q}`);
+    async searchAirports(q, limit = 10) {
+        return this._fetch(`/api/airports/search?q=${q}&limit=${limit}`);
     }
 };

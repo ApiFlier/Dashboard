@@ -10,7 +10,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 4
 
 def get_db_path() -> str:
     return settings.DB_PATH
@@ -146,6 +146,21 @@ def run_migrations(conn: sqlite3.Connection):
             # Column might already exist if schema was partially updated
             logger.warning(f"Migration to v3 warning: {e}")
         set_schema_version(conn, 3)
+
+    if current_version < 4:
+        logger.info("Running schema migration to version 4")
+        try:
+            conn.execute("ALTER TABLE airports ADD COLUMN iata_code TEXT")
+            conn.execute("ALTER TABLE airports ADD COLUMN type TEXT")
+            
+            # Create search indexes
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_airports_ident ON airports(ident)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_airports_name ON airports(name)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_airports_city ON airports(city)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_airports_iata ON airports(iata_code)")
+        except sqlite3.OperationalError as e:
+            logger.warning(f"Migration to v4 warning: {e}")
+        set_schema_version(conn, 4)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()

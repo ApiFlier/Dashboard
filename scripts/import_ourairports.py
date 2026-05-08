@@ -103,11 +103,13 @@ def import_ourairports(db_path, data_dir, countries, types, download=False, dry_
                     report["airports"]["inserted"] += 1
             else:
                 cursor.execute("""
-                    INSERT OR REPLACE INTO airports (ident, name, city, state, country, lat, lon, elevation_ft, source, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO airports (ident, name, iata_code, type, city, state, country, lat, lon, elevation_ft, source, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     ident,
                     row['name'],
+                    row['iata_code'] if row['iata_code'] else None,
+                    row['type'],
                     row['municipality'],
                     row['iso_region'].split('-')[-1],
                     row['iso_country'],
@@ -117,6 +119,7 @@ def import_ourairports(db_path, data_dir, countries, types, download=False, dry_
                     "OurAirports",
                     now
                 ))
+
                 if existing:
                     report["airports"]["updated"] += 1
                 else:

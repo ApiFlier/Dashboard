@@ -49,6 +49,15 @@ class AviationWeatherClient:
         except Exception:
             return []
 
+    async def get_metars(self, icaos: List[str]) -> List[Dict[str, Any]]:
+        if not icaos:
+            return []
+        try:
+            # Join multiple IDs with commas
+            return await self._get_json("metar", {"ids": ",".join(icaos), "format": "json"}, ttl=self.METAR_TTL)
+        except Exception:
+            return []
+
     async def get_taf(self, icao: str) -> Optional[List[Dict[str, Any]]]:
         try:
             return await self._get_json("taf", {"ids": icao, "format": "json"}, ttl=self.TAF_TTL)

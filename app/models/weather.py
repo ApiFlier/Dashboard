@@ -25,10 +25,13 @@ class NormalizedTaf(BaseModel):
     valid_to: str
     forecast_periods: List[Dict[str, Any]] = []
 
+from app.models.airport import NearbyWeatherStation
+
 class NormalizedWeather(BaseModel):
     airport: str
     generated_at: str
     metar: Optional[NormalizedMetar] = None
     taf: Optional[NormalizedTaf] = None
+    nearby_weather_stations: List[NearbyWeatherStation] = []
     source: str = "AviationWeather.gov"
     warnings: List[str] = []

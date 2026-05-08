@@ -101,7 +101,6 @@ def test_airport_data_reads_from_runtime_db(temp_db):
 
         search = search_airports("test")
         assert len(search) == 1
-        assert search[0]["icao"] == "TEST"
-
+        assert search[0]["ident"] == "TEST"
         all_apts = get_all_airports()
         assert len(all_apts) >= 1

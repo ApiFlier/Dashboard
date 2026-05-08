@@ -68,7 +68,18 @@ async def build_airport_brief(icao: str) -> AirportBrief:
         warnings.extend(hazards.warnings)
     
     if not metar:
-        plain_english.append("No METAR was available, so runway and alternate guidance is limited.")
+        if weather_data.nearby_weather_stations:
+            nearby = weather_data.nearby_weather_stations[0]
+            plain_english.append(f"No field METAR available. Nearby station {nearby.ident} ({nearby.distance_nm} nm) shows {nearby.flight_category} conditions.")
+            # Adjust overall condition risk if field is missing but nearby is bad
+            if nearby.flight_category in ["IFR", "LIFR"]:
+                condition.weather_risk = "high"
+            elif nearby.flight_category == "MVFR":
+                condition.weather_risk = "moderate"
+        else:
+            plain_english.append("No field METAR available and no nearby reporting stations found.")
+        
+        plain_english.append("Runway and alternate guidance is limited without field weather.")
     else:
         # flight category
         if flt_cat == "VFR":
