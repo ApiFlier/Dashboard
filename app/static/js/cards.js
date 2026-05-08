@@ -576,19 +576,18 @@ const cards = {
         `;
     },
 
-    renderBoardCard(data) {
-        const { airport: dir, weather, brief, hazards } = data;
-        const icao = dir.icao;
-        const metar = weather?.metar;
-        const fltCat = metar?.flight_category || (weather?.nearby_weather_stations?.length > 0 ? "NEARBY" : "UNKNOWN");
-        const wind = metar ? utils.formatWind(metar.wind) : (weather?.nearby_weather_stations?.[0]?.wind || 'N/A');
+    renderBoardCard(summary) {
+        const icao = summary.icao;
+        const fltCat = summary.flight_category;
+        const wind = summary.wind_summary || 'N/A';
+        const name = summary.name || "Information unavailable";
         
         return `
             <div class="card board-card" data-icao="${icao}">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
                     <div>
-                        <h3 style="margin: 0; font-size: 1.25rem;">${icao}</h3>
-                        <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${dir.name}</div>
+                        <h3 style="margin: 0; font-size: 1.25rem;">${icao}${summary.iata_code ? ` (${summary.iata_code})` : ''}</h3>
+                        <div style="font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;">${name}</div>
                     </div>
                     ${utils.getFlightCategoryChip(fltCat)}
                 </div>
@@ -600,17 +599,21 @@ const cards = {
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>Favored:</span>
-                        <strong>${brief?.favored_runway?.end || 'N/A'}</strong>
+                        <strong>${summary.favored_runway_end || 'N/A'}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>Risk:</span>
-                        <strong>${utils.getRiskLevelChip(hazards?.risk_level || 'unknown')}</strong>
+                        <strong>${utils.getRiskLevelChip(summary.hazard_risk || 'unknown')}</strong>
                     </div>
                 </div>
 
-                ${!metar && weather?.nearby_weather_stations?.length > 0 ? `
-                    <div style="font-size: 0.7rem; color: var(--warning); margin-bottom: 0.5rem;">⚠️ Field METAR unavailable. Showing ${weather.nearby_weather_stations[0].ident}.</div>
+                ${summary.nearby_weather_used ? `
+                    <div style="font-size: 0.7rem; color: var(--warning); margin-bottom: 0.5rem;">⚠️ Field METAR unavailable. Using nearby weather.</div>
                 ` : ''}
+                
+                <div style="font-size: 0.65rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                    Updated: ${utils.formatDate(summary.generated_at)}
+                </div>
 
                 <div class="board-card-actions" style="display: flex; gap: 0.5rem; margin-top: auto;">
                     <a href="#/airport/${icao}" class="chip info" style="flex: 1; text-align: center; text-decoration: none;">Dash</a>

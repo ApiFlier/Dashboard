@@ -1,5 +1,6 @@
 import datetime
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
 from app.services.airport_data import get_airport_directory, get_airport_runways
 from app.services.aviationweather_client import aw_client
@@ -87,13 +88,16 @@ async def get_batch_airport_summaries(idents: List[str]) -> List[Dict[str, Any]]
     # Limit to 12
     idents = list(set([i.upper() for i in idents]))[:12]
     
+    tasks = [get_airport_summary(ident) for ident in idents]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
     summaries = []
-    for ident in idents:
-        try:
-            summary = await get_airport_summary(ident)
-            summaries.append(summary.model_dump())
-        except Exception as e:
-            logger.error(f"Failed to get summary for {ident}: {e}")
-            summaries.append({"icao": ident, "error": str(e)})
+    for i, res in enumerate(results):
+        ident = idents[i]
+        if isinstance(res, Exception):
+            logger.error(f"Failed to get summary for {ident}: {res}")
+            summaries.append({"icao": ident, "error": str(res)})
+        else:
+            summaries.append(res.model_dump())
             
     return summaries

@@ -344,10 +344,11 @@ async function handleRoute() {
     }
 
     if (hash === '/board') {
-        stopRefreshTimer();
-        statusBar.style.display = 'none';
         updateNavLinks(currentIcao);
-        renderBoard(content);
+        if (content.innerHTML === '' || content.querySelector('.loading') || !content.innerHTML.includes('Airport Board')) {
+             content.innerHTML = '<div class="loading">Loading Board...</div>';
+        }
+        await refreshCurrentView(false);
         return;
     }
 
@@ -364,18 +365,36 @@ async function refreshCurrentView(isManual = false) {
     if (isRefreshing) return;
     
     const hash = window.location.hash.substring(1) || '/';
+    const content = document.getElementById('app-content');
+    const statusBar = document.getElementById('status-bar');
+    const lastUpdatedEl = document.getElementById('last-updated');
+
+    if (hash === '/board') {
+        isRefreshing = true;
+        try {
+            await renderBoard(content);
+            lastUpdatedEl.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
+            statusBar.style.display = 'flex';
+            if (!refreshTimer) startRefreshTimer();
+        } catch (e) {
+            console.error('Board refresh failed:', e);
+            if (content.querySelector('.loading')) {
+                content.innerHTML = `<div class="card danger"><h2>Error loading board</h2><p>${e.message}</p></div>`;
+            }
+        } finally {
+            isRefreshing = false;
+        }
+        return;
+    }
+
     if (!hash.startsWith('/airport/')) {
         stopRefreshTimer();
         return;
     }
-    
+
     const parts = hash.split('/');
     const icao = parts[2];
     const view = parts[3] || 'dashboard';
-    
-    const content = document.getElementById('app-content');
-    const statusBar = document.getElementById('status-bar');
-    const lastUpdatedEl = document.getElementById('last-updated');
 
     isRefreshing = true;
     try {
@@ -481,51 +500,59 @@ async function renderBoard(container) {
         return;
     }
 
-    container.innerHTML = `
-        <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
-            <h1>Airport Board</h1>
-            <div class="search-container" style="width: 250px;">
-                <input type="text" id="board-search" placeholder="Add airport..." autocomplete="off">
+    const isAlreadyRendered = container.querySelector('#board-grid');
+    if (!isAlreadyRendered) {
+        container.innerHTML = `
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h1>Airport Board</h1>
+                <div class="search-container" style="width: 250px;">
+                    <input type="text" id="board-search" placeholder="Add airport..." autocomplete="off">
+                </div>
             </div>
-        </div>
-        <div id="board-grid" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
-            <div class="loading">Loading board summaries...</div>
-        </div>
-    `;
-
-    setupAutocomplete(document.getElementById('board-search'));
+            <div id="board-grid" class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
+                <div class="loading">Loading board summaries...</div>
+            </div>
+        `;
+        setupAutocomplete(document.getElementById('board-search'));
+    }
 
     const grid = document.getElementById('board-grid');
     
-    // Fetch all summaries concurrently
-    const tasks = favorites.map(f => api.getDashboard(f.ident).catch(e => ({ error: true, icao: f.ident, message: e.message })));
-    const results = await Promise.all(tasks);
-    
-    grid.innerHTML = results.map(r => {
-        if (r.error) {
-            return `
-                <div class="card board-card danger" data-icao="${r.icao}">
-                    <h3 style="margin: 0;">${r.icao}</h3>
-                    <p style="font-size: 0.85rem; color: var(--danger-text);">Failed to load: ${r.message}</p>
-                    <div class="board-card-actions" style="margin-top: auto;">
-                        <button class="chip danger remove-favorite-btn" data-icao="${r.icao}" style="border: none; cursor: pointer; width: 100%;">Remove</button>
+    // Fetch all summaries using batch endpoint
+    try {
+        const idents = favorites.map(f => f.ident);
+        const results = await api.getBatchSummaries(idents);
+        
+        grid.innerHTML = results.map(r => {
+            if (r.error) {
+                const icao = r.icao || '???';
+                return `
+                    <div class="card board-card danger" data-icao="${icao}">
+                        <h3 style="margin: 0;">${icao}</h3>
+                        <p style="font-size: 0.85rem; color: var(--danger-text);">Failed to load: ${r.message || r.error}</p>
+                        <div class="board-card-actions" style="margin-top: auto;">
+                            <button class="chip danger remove-favorite-btn" data-icao="${icao}" style="border: none; cursor: pointer; width: 100%;">Remove</button>
+                        </div>
                     </div>
-                </div>
-            `;
-        }
-        return cards.renderBoardCard(r);
-    }).join('');
-
-    // Attach remove handlers
-    grid.querySelectorAll('.remove-favorite-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            const icao = e.target.dataset.icao;
-            if (confirm(`Remove ${icao} from board?`)) {
-                await api.removeFavorite(icao);
-                renderBoard(container); // Re-render
+                `;
             }
+            return cards.renderBoardCard(r);
+        }).join('');
+
+        // Attach remove handlers
+        grid.querySelectorAll('.remove-favorite-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const icao = e.target.dataset.icao;
+                if (confirm(`Remove ${icao} from board?`)) {
+                    await api.removeFavorite(icao);
+                    renderBoard(container); // Re-render
+                }
+            });
         });
-    });
+    } catch (e) {
+        console.error("Board batch fetch failed:", e);
+        grid.innerHTML = `<div class="card danger"><h2>Error loading board</h2><p>${e.message}</p></div>`;
+    }
 }
 
 function renderAboutPage(container) {

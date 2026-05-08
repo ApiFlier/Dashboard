@@ -34,7 +34,9 @@ def temp_db_with_settings():
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS airports (
                         ident TEXT PRIMARY KEY,
+                        iata_code TEXT,
                         name TEXT,
+                        type TEXT,
                         city TEXT,
                         state TEXT,
                         country TEXT,
@@ -45,6 +47,7 @@ def temp_db_with_settings():
                         updated_at TEXT
                     )
                 """)
+                conn.execute("INSERT INTO airports (ident, name) VALUES ('KXYZ', 'Test Airport')")
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS frequencies (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,7 +59,6 @@ def temp_db_with_settings():
                         updated_at TEXT
                     )
                 """)
-                conn.execute("INSERT INTO airports (ident, name) VALUES ('KXYZ', 'Test Airport')")
                 conn.commit()
                 yield str(db_path)
 
