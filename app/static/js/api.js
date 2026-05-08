@@ -40,6 +40,13 @@ const api = {
     async getDashboard(icao) {
         return this._fetch(`/api/airport/${icao}/dashboard`);
     },
+    async getSummary(icao) {
+        return this._fetch(`/api/airport/${icao}/summary`);
+    },
+    async getBatchSummaries(idents) {
+        if (!idents || idents.length === 0) return [];
+        return this._fetch(`/api/airports/summary?idents=${idents.join(',')}`);
+    },
     async getReferenceStatus() {
         return this._fetch(`/api/reference/status`);
     },
