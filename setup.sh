@@ -71,18 +71,16 @@ mkdir -p backups
 echo "Ensuring Docker named volume 'airfieldops_state' exists..."
 docker volume create airfieldops_state >/dev/null
 
-# Check for legacy container name
-if docker ps -a --format '{{.Names}}' | grep -q "^airfieldops_prod$"; then
-    echo "Warning: A legacy container 'airfieldops_prod' was detected."
-    echo "The project now uses 'airfieldops' as the canonical name."
-    echo "Do you want to stop and remove the legacy 'airfieldops_prod' container? (y/n)"
-    read -r remove_legacy
-    if [ "$remove_legacy" = "y" ]; then
-        echo "Removing legacy container..."
-        docker stop airfieldops_prod || true
-        docker rm airfieldops_prod || true
+# Remove any existing AirfieldOps containers before starting.
+# This prevents Docker name conflicts on re-runs and migrates from legacy names.
+# Volumes are never touched — only the container process is replaced.
+for _cname in airfieldops_prod airfieldops airfieldops-app; do
+    if docker ps -a --format '{{.Names}}' | grep -q "^${_cname}$"; then
+        echo "Removing existing container '${_cname}' (volume state preserved)..."
+        docker stop "${_cname}" 2>/dev/null || true
+        docker rm "${_cname}" 2>/dev/null || true
     fi
-fi
+done
 
 echo "Starting application in production mode..."
 $DOCKER_COMPOSE_CMD -f deploy/docker-compose.prod.yml up --build -d

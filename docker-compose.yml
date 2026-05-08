@@ -2,7 +2,7 @@
 services:
   airfieldops:
     build: .
-    container_name: airfieldops
+    container_name: airfieldops-app
     ports:
       - "8080:8080"
     volumes:

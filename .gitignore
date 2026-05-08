@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 .env
 
-# Runtime backups
+# Runtime backups and generated reports
 backups/
 *.tar.gz
+reports/
+
+# Empty data staging directory
+data/

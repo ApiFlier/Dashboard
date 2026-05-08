@@ -22,8 +22,8 @@ if ! docker compose version &> /dev/null; then
 fi
 
 # 2. Verify App State
-if ! docker ps | grep -q airfieldops; then
-    echo "Error: airfieldops container is not running."
+if ! docker ps --format '{{.Names}}' | grep -q "^airfieldops-app$"; then
+    echo "Error: airfieldops-app container is not running. Run ./setup.sh first."
     exit 1
 fi
 

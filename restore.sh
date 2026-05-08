@@ -61,7 +61,7 @@ if [ -f "$TMP_DIR/airfieldops_state.tar.gz" ]; then
     fi
 
     echo "Stopping container if running..."
-    docker stop airfieldops 2>/dev/null || true
+    docker stop airfieldops-app 2>/dev/null || true
 
     echo "Restoring Docker volume contents..."
     # Ensure volume exists

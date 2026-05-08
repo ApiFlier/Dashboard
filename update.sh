@@ -41,8 +41,8 @@ fi
 
 # 4. Rebuild and restart
 echo "Stopping old container if it exists..."
-docker stop airfieldops 2>/dev/null || true
-docker rm airfieldops 2>/dev/null || true
+docker stop airfieldops-app 2>/dev/null || true
+docker rm airfieldops-app 2>/dev/null || true
 
 echo "Rebuilding and restarting application in production mode..."
 if docker compose version &> /dev/null; then
