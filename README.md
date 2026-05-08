@@ -1,126 +1,242 @@
-# AirfieldOps Core
+# AirfieldOps
 
-AirfieldOps Core is a self-hosted, advisory/display-only airport operations dashboard. It is designed for small airports, FBOs, flight schools, and charter operators to provide a unified view of operational data for a selected airport.
+**AirfieldOps** is a self-hosted live aviation operations dashboard. It runs against a real airport database sourced from [OurAirports](https://ourairports.com/data/) and fetches live weather and hazard data at runtime from public aviation APIs — no API keys required.
 
-## Project Purpose
-To provide a consolidated, quick-reference view of airport conditions (weather, runways, alternates, hazards) without needing multiple browser tabs. 
+Select any airport by ICAO code and get a consolidated view of live METARs and TAFs, runway wind analysis, nearby alternates, and regional hazard data (SIGMETs, G-AIRMETs, CWAs, PIREPs), all in one place.
 
-## MVP Scope
-- Unified dashboard for a single selected airport.
-- Fetch and display METAR/TAF, runway wind conditions, nearby alternates, and regional weather hazards.
-- Purely advisory information.
+> **Advisory display only.** Not for certified flight planning, dispatch, release, or operational control.
 
-## Explicit Non-Goals
-- **No Certified Flight Planning:** This is not for legal dispatch, release, or operational control.
-- **No OpenSky:** OpenSky data is intentionally not used in this project.
-- **No NOTAMs:** NOTAM parsing and display are out of scope for the MVP. No fake NOTAM placeholders are used.
-- **No SWIM Integration:** Future only.
+---
+
+## Quick Start
+
+### 1. Install Docker
+
+| Platform | Instructions |
+|----------|-------------|
+| Windows / macOS | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
+| Linux | Install [Docker Engine](https://docs.docker.com/engine/install/) + the [Compose plugin](https://docs.docker.com/compose/install/linux/) |
+
+### 2. Verify Docker
+
+```bash
+docker --version
+docker compose version
+```
+
+Both commands must succeed before continuing.
+
+### 3. Clone and run
+
+```bash
+git clone https://github.com/ApiFlier/airfieldops-dashboard.git airfieldops
+cd airfieldops
+chmod +x setup.sh
+./setup.sh
+```
+
+`setup.sh` handles everything automatically:
+
+- Creates `.env` with production-ready defaults (no editing required)
+- Builds the Docker image
+- Creates or reuses a Docker-managed persistent volume (`airfieldops_state`)
+- Scans for an available host port starting at 8080 — **no manual port editing needed**
+- Starts the container with `restart: unless-stopped`
+- Prints the local URL when the app is healthy
+
+---
+
+## What AirfieldOps Does
+
+Select any airport by ICAO code and get a consolidated operational view:
+
+- **Live weather** — current METAR and TAF
+- **Runway wind analysis** — headwind and crosswind components per runway, from live wind data
+- **Alternate ranking** — nearby airports scored by weather, distance, and runway length
+- **Hazard feed** — SIGMETs, G-AIRMETs, CWAs, and PIREPs for the region
+- **Operational brief** — single-page pre-flight or ops overview
+
+Designed for small airports, FBOs, flight schools, and charter operators who need quick operational awareness without switching between multiple browser tabs.
+
+---
+
+## Key Features
+
+- Unified dashboard — weather, runways, alternates, and hazards in one place
+- Fetches fresh data on demand from free public APIs; no API keys required
+- Runway heading math with headwind/crosswind per runway from live METAR wind
+- Alternate ranker with configurable scoring
+- Public read-only mode — all mutations blocked without `X-Admin-Token`
+- User preferences (default airport, favorites, recents) stored in browser `localStorage` in public mode
+- No analytics, no tracking, no third-party beacons
+- Strict Content Security Policy enforced server-side
+
+---
+
+## Architecture
+
+```
+Browser (Vanilla JS SPA)
+    │
+    └── FastAPI (Python 3.12, Uvicorn)
+            │
+            ├── AviationWeather.gov  (METAR, TAF, SIGMET, G-AIRMET, PIREP, CWA)
+            ├── NWS api.weather.gov  (Alerts, Point Forecasts)
+            └── SQLite               (real airport/runway/frequency database + settings)
+                    Stored in Docker named volume: airfieldops_state
+```
+
+No build step or Node runtime is required. The frontend is vanilla JavaScript served as static files by the backend.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12, FastAPI, Uvicorn |
+| Frontend | Vanilla JavaScript, HTML/CSS (no framework, no build step) |
+| Database | SQLite via Python stdlib `sqlite3` |
+| Containerization | Docker, Docker Compose |
+| Testing | pytest |
+
+---
 
 ## Data Sources
-- AviationWeather.gov API (METAR, TAF, Airport, Station, PIREP, SIGMET, G-AIRMET, CWA)
-- NWS API (Alerts, Point Forecasts)
 
-## Disclaimer
-**Advisory display only. Not for certified flight planning, dispatch, release, or operational control.**
+| Source | Data Provided |
+|--------|--------------|
+| [AviationWeather.gov](https://aviationweather.gov) | METAR, TAF, PIREP, SIGMET, G-AIRMET, CWA, airport/station info |
+| [NWS api.weather.gov](https://api.weather.gov) | Weather alerts, point forecasts |
+| [OurAirports](https://ourairports.com/data/) | Real-world airport and runway database, frequencies (public domain, global coverage) |
 
-The runway intelligence and alternate ranking modules are simple advisory helpers. They do not replace pilot judgment, official performance charts, or certified flight planning tools.
+No API keys are required for any data source.
 
-## Development vs Production
+**Intentional non-goals:**
+- No OpenSky or flight tracking
+- No NOTAMs (out of scope for current version)
+- No SWIM integration
+- Not a certified flight planning or dispatch tool
 
-### Development Workflow
-For development, you need the local source code.
+---
+
+## Public Read-Only Mode / Security Model
+
+`PUBLIC_READONLY_MODE=true` is the default. In this mode:
+
+- All `GET` (read) endpoints are publicly accessible
+- All mutating endpoints (settings, favorites, recent history) require an `X-Admin-Token` header matching `ADMIN_API_TOKEN`
+- If `ADMIN_API_TOKEN` is not set, all mutations are **permanently blocked**
+- User preferences fall back to browser `localStorage` automatically
+
+Recommended settings for public deployments:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `PUBLIC_READONLY_MODE` | `true` | Block mutations without admin token |
+| `ADMIN_API_TOKEN` | Strong random string | Required to allow any backend mutations |
+| `DEBUG_PUBLIC_ENDPOINTS` | `false` | Hide internal debug endpoints |
+| `AIRFIELDOPS_USER_AGENT` | Your contact info | Identifies your instance to upstream APIs |
+
+Always serve over HTTPS when publicly exposed. Backup and restore scripts are CLI-only and are not exposed as web endpoints.
+
+**Content Security Policy:** The app enforces a strict CSP. If you deploy behind Cloudflare and see CSP violation warnings for `static.cloudflareinsights.com`, disable Web Analytics in your Cloudflare dashboard rather than weakening the CSP.
+
+---
+
+## Runtime State and Persistence
+
+All persistent state lives in Docker named volume `airfieldops_state`, mounted at `/var/lib/airfieldops` inside the container:
+
+| File | Purpose |
+|------|---------|
+| `airfieldops.sqlite` | Real airport/runway/frequency database, settings, favorites |
+
+The airport database (sourced from OurAirports plus hand-curated geometry for airports like KAVP and KAGC) is seeded on first run. Weather cache is in-memory and disposable — a restart loses no airport data.
+
+**Backup and restore:**
 ```bash
-docker compose up --build
+./backup.sh                                          # Timestamped archive in backups/
+./restore.sh backups/backup_YYYYMMDD_HHMMSS.tar.gz  # Restore from archive
 ```
-This uses local folder bind mounts, allowing live-reloading of changes. It is meant exclusively for development.
 
-### Production Workflow
-For production, the application is designed to be "stupid-simple" to deploy and run completely decoupled from the source directory.
+`restore.sh` creates a pre-restore backup and requires typed confirmation before overwriting state.
 
-Run the setup script:
+> **Warning:** `docker compose down -v` permanently wipes the named volume. Use `docker compose down` (without `-v`) for a normal stop.
+
+**Refreshing the airport database** from OurAirports inside a running container:
+```bash
+./refresh_reference_data.sh --dry-run   # Preview import changes
+./refresh_reference_data.sh             # Apply (auto-creates backup first)
+```
+
+---
+
+## Testing
+
+```bash
+pytest
+```
+
+The test suite covers:
+
+- API route response shapes
+- Public read-only safety (mutations blocked without valid token)
+- Runway math (headwind/crosswind calculations)
+- Alternate ranking logic
+- Weather normalization
+- Airport database seeding and OurAirports import
+- Database initialization and schema
+
+---
+
+## Deployment Notes
+
+### Standard deployment
+
 ```bash
 ./setup.sh
 ```
-This script will:
-1. Find a free port for the app (default 8080).
-2. Provision a persistent Docker named volume (`airfieldops_state`).
-3. Build and launch the container with `restart: unless-stopped`.
-4. Optionally allow you to delete all local source files (`DELETE SOURCE`).
 
-Once deployed in production, the running container no longer relies on the local source repo. Normal restarts and host reboots are handled by Docker. If you need to upgrade the application later and you deleted the source files, you must re-clone the repository. If you accidentally delete the container, you need `setup.sh` or a recloned repo to recreate it (your Docker volume with state will persist).
+Handles `.env` creation, port discovery, volume provisioning, image build, and health check in one step.
 
-To restore from a backup, use `restore.sh`. It safely creates a pre-restore backup and requires typed confirmation before overwriting your runtime state.
+### Updating a running deployment
 
-### Data Model
-- **Reference Data:**
-  - **Curated Seed:** Hand-verified data for core airports (e.g., KAVP, KAGC) including precise runway threshold coordinates for accurate layouts.
-  - **Bulk Import:** Public-domain community data from [OurAirports](https://ourairports.com/data/). Provides broad coverage for thousands of airports, runways, and frequencies.
-- **Data Integrity:** Seeded into the SQLite runtime database on first run. Bulk imports can be triggered manually. Curated data is preserved during imports unless superior geometry is found.
-- **Live Data:** Fetched fresh from APIs. Weather cache is disposable. Source data may be missing, partially unavailable, or stale. The app is designed to degrade gracefully and provide warnings when data is missing.
-- **Persistent State:** Config, history, and the SQLite runtime database (`airfieldops.sqlite`) are stored in the persistent Docker volume at `/var/lib/airfieldops`.
-
-### Reference Data Management
-
-The project uses [OurAirports](https://ourairports.com/data/) as the primary source for global airport and runway data.
-
-#### Refreshing Reference Data
-
-To refresh the dataset (e.g., to get latest FAA/global updates):
-
-1.  **Dry Run First:**
-    ```bash
-    ./refresh_reference_data.sh --dry-run
-    ```
-    This will download (if requested), parse, and validate the data without modifying your database. Review the generated report in `reports/reference_import_YYYYMMDD_HHMMSS.json`.
-
-2.  **Execute Refresh:**
-    ```bash
-    ./refresh_reference_data.sh
-    ```
-    This script automatically:
-    - Creates a backup in `backups/`.
-    - Imports the data while preserving curated geometry for airports like KAVP and KAGC.
-    - Runs validation checks.
-    - Reports before/after counts.
-
-#### Rollback
-
-If an import results in bad data:
-
-1.  Identify the latest good backup in `backups/`.
-2.  Run the restore script:
-    ```bash
-    ./restore.sh backups/backup_YYYYMMDD_HHMMSS.tar.gz
-    ```
-
-**Warning:** Do not run `docker compose down -v` unless you intend to permanently wipe all reference data and settings.
-
-### Public Deployment
-...
-
-When exposing AirfieldOps Core publicly, ensure the following safety measures:
-
-1. **Read-Only Mode:** Set `PUBLIC_READONLY_MODE=true` (default) in your environment. This will block all mutating endpoints (settings, favorites, recent history) unless a valid `X-Admin-Token` is provided. In this mode, user preferences (default airport, recent search history) are stored in the user's browser `localStorage` instead of the backend database.
-2. **Admin Token:** Configure a strong `ADMIN_API_TOKEN`. If this is not set while in read-only mode, all mutations will be permanently blocked for safety.
-3. **Debug Endpoints:** Ensure `DEBUG_PUBLIC_ENDPOINTS=false` (default) to hide internal debugging information.
-4. **User-Agent:** Set `AIRFIELDOPS_USER_AGENT` to identify your instance to AviationWeather and NWS servers.
-5. **API Keys:** No API keys are currently required for AviationWeather or NWS usage.
-6. **Scripts:** Do not expose backup/restore scripts through web endpoints; they should remain CLI-only for security.
-7. **Auto-Refresh:** Keep `refresh_interval_seconds` at a conservative level (e.g., 300+) to avoid excessive API calls and potential rate limiting.
-8. **HTTPS:** Always serve the dashboard over HTTPS when exposed to the public internet.
-
-**Note:** This application is advisory-only. It is not for certified aviation, dispatch, or flight planning.
-
-### Content Security Policy & Analytics
-
-AirfieldOps Core maintains a strict Content Security Policy (CSP) to ensure security and prevent unauthorized script execution. 
-
-1. **Analytics/Beacons:** This project does not include any analytics or tracking scripts (e.g., Google Analytics, Cloudflare Insights).
-2. **CSP Violations:** If you deploy via Cloudflare and see CSP violation warnings in your browser console for `static.cloudflareinsights.com/beacon.min.js`, it is because Cloudflare is automatically injecting an analytics beacon at the edge.
-3. **Disabling Analytics:** To resolve these warnings, you should **disable Web Analytics** in your Cloudflare dashboard under the "Web Analytics" or "Scrape Shield" settings for your domain. Do not weaken the app's CSP to accommodate these scripts.
-
-## Testing
-To run the test suite:
 ```bash
-pytest
-```# Dashboard
+./update.sh
+```
+
+Creates a pre-update backup, rebuilds the image, and restarts the container.
+
+### Production decoupling
+
+Once the container is running, it has no dependency on the local source directory. You can delete the source files if desired — the app continues running and restarts on host reboot. To update after deleting source files, re-clone and run `./setup.sh`.
+
+### Development mode
+
+For local development with live-reload:
+```bash
+docker compose up --build
+```
+
+This uses a local bind mount so source changes are reflected immediately. For development only — do not use in production.
+
+---
+
+## Known Limitations
+
+- **Single-airport view** — no side-by-side multi-airport comparison
+- **No NOTAMs** — NOTAM parsing and display are out of scope for the current version
+- **No offline mode** — weather data is fetched live on every request
+- **Upstream API availability** — if AviationWeather.gov or NWS is unavailable, the dashboard degrades gracefully with warnings
+- **Advisory only** — not for certified flight planning, dispatch, or operational control
+
+---
+
+## Roadmap / Future Work
+
+- NOTAM display (pending a suitable free or low-cost API)
+- Multi-airport comparison board
+- SWIM integration for live traffic data
+- User-configurable alert thresholds
+- Improved mobile layout

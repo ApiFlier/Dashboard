@@ -21,16 +21,27 @@ else
 fi
 
 if [ ! -f .env ]; then
-    echo "Creating .env from .env.example..."
-    cp .env.example .env
+    echo "Creating .env with production defaults..."
+    cat > .env <<'EOF'
+APP_NAME="AirfieldOps"
+APP_ENV=production
+APP_PORT=8080
+DEFAULT_AIRPORT=KAGC
+CACHE_TTL_SECONDS=300
+HTTP_TIMEOUT_SECONDS=10
+AIRFIELDOPS_USER_AGENT="AirfieldOps/1.0 (self-hosted)"
+PUBLIC_READONLY_MODE=true
+ADMIN_API_TOKEN=
+DEBUG_PUBLIC_ENDPOINTS=false
+AIRFIELDOPS_STATE_DIR=/var/lib/airfieldops
+AIRFIELDOPS_DB_PATH=/var/lib/airfieldops/airfieldops.sqlite
+EOF
 fi
 
-# Attempt to source .env to load variables if it exists
-if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
-fi
+# Load .env so PORT and other vars are available to this script
+set -a
+source .env
+set +a
 
 PORT=${APP_PORT:-8080}
 echo "Checking if port $PORT is available..."
