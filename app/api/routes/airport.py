@@ -47,27 +47,35 @@ async def get_dashboard_data(airport: str):
     if not directory_data:
         raise HTTPException(status_code=404, detail="Airport not found")
 
-    # Fetch everything concurrently
+    # Fetch everything concurrently with a timeout per task
+    async def safe_task(task):
+        try:
+            return await asyncio.wait_for(task, timeout=10.0)
+        except asyncio.TimeoutError:
+            return {"error": "Request timed out after 10s"}
+        except Exception as e:
+            return {"error": str(e)}
+
     tasks = [
-        weather.weather(airport),
-        runways.runways(airport),
-        alternates.alternates(airport),
-        hazards.hazards(airport),
-        brief.brief(airport),
-        get_airport_coverage(airport)
+        safe_task(weather.weather(airport)),
+        safe_task(runways.runways(airport)),
+        safe_task(alternates.alternates(airport)),
+        safe_task(hazards.hazards(airport)),
+        safe_task(brief.brief(airport)),
+        safe_task(get_airport_coverage(airport))
     ]
     
     try:
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks)
         
         return {
             "airport": directory_data,
-            "weather": results[0] if not isinstance(results[0], Exception) else {"error": str(results[0])},
-            "runways": results[1] if not isinstance(results[1], Exception) else {"error": str(results[1])},
-            "alternates": results[2] if not isinstance(results[2], Exception) else {"error": str(results[2])},
-            "hazards": results[3] if not isinstance(results[3], Exception) else {"error": str(results[3])},
-            "brief": results[4] if not isinstance(results[4], Exception) else {"error": str(results[4])},
-            "coverage": results[5] if not isinstance(results[5], Exception) else {"error": str(results[5])}
+            "weather": results[0],
+            "runways": results[1],
+            "alternates": results[2],
+            "hazards": results[3],
+            "brief": results[4],
+            "coverage": results[5]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to aggregate dashboard data: {str(e)}")

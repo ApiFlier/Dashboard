@@ -3,6 +3,7 @@ let currentIcao = null;
 let isRefreshing = false;
 let settingsLoaded = false;
 const DEBUG = false;
+const DEBUG_ROUTER = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -193,8 +194,8 @@ function startRefreshTimer() {
     if (DEBUG) console.log(`[Timer] Starting auto-refresh timer: ${refreshSeconds}s`);
 
     refreshTimer = setInterval(() => {
-        const hash = window.location.hash.substring(1) || '/';
-        if (!hash.startsWith('/airport/')) {
+        const route = parseRoute();
+        if (route.type !== 'airport' && route.type !== 'board') {
             stopRefreshTimer();
             return;
         }
@@ -231,20 +232,41 @@ function navigateToAirport(icao) {
     window.location.hash = `/airport/${icao}`;
 }
 
-function updateNavLinks(icao) {
+function parseRoute(hash) {
+    const h = (hash || window.location.hash || '#/').substring(1);
+    const parts = h.split('/').filter(p => p !== '');
+    
+    let res;
+    if (parts.length === 0 || h === '/') res = { type: 'root' };
+    else if (parts[0] === 'board') res = { type: 'board' };
+    else if (parts[0] === 'settings') res = { type: 'settings' };
+    else if (parts[0] === 'about') res = { type: 'about' };
+    else if (parts[0] === 'search') res = { type: 'search' };
+    else if (parts[0] === 'airport' && parts[1]) {
+        res = {
+            type: 'airport',
+            icao: parts[1].toUpperCase(),
+            view: parts[2] || 'dashboard'
+        };
+    } else res = { type: 'unknown' };
+
+    if (DEBUG_ROUTER) console.log(`[Router] Parsed route from "${h}":`, res);
+    return res;
+}
+
+function updateNavLinks(route) {
     const nav = document.getElementById('main-nav');
     const settings = utils.getSettings();
-    const hash = window.location.hash;
     
     // Always show nav if an airport is specified or if default_airport is set
-    if (!icao && !settings.default_airport) {
+    const targetIcao = route.icao || currentIcao || settings.default_airport;
+    
+    if (!targetIcao && route.type !== 'board' && route.type !== 'settings' && route.type !== 'about') {
         nav.style.display = 'none';
         return;
     }
     nav.style.display = 'flex';
     
-    const targetIcao = icao || settings.default_airport;
-
     // Sub-nav links
     const links = {
         'nav-home': `#/airport/${targetIcao}`,
@@ -264,27 +286,32 @@ function updateNavLinks(icao) {
         const el = document.getElementById(id);
         if (el) {
             el.href = href;
-            // Highlight if hash starts with the link's target, but be careful with home vs sub-pages
-            if (id === 'nav-home') {
-                const parts = hash.split('/');
-                if (hash === href || (parts.length === 3 && parts[1] === 'airport' && parts[2] === targetIcao)) {
+            
+            // Active state logic
+            if (route.type === 'board' && id === 'nav-board') {
+                el.classList.add('active');
+            } else if (route.type === 'settings' && id === 'nav-settings') {
+                el.classList.add('active');
+            } else if (route.type === 'airport' && route.icao === targetIcao) {
+                if (route.view === 'dashboard' && id === 'nav-home') {
+                    el.classList.add('active');
+                } else if (id === `nav-${route.view}`) {
                     el.classList.add('active');
                 }
-            } else if (hash === href) {
-                el.classList.add('active');
             }
         }
     }
 }
 
 async function handleRoute() {
-    const hash = window.location.hash.substring(1) || '/';
-    if (DEBUG) console.log(`[Router] Handling route: "${hash}"`);
+    const route = parseRoute();
+    if (DEBUG_ROUTER) console.log(`[Router] handleRoute:`, route);
+    
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
     
     // 1. Sync backend settings if needed
-    if (!settingsLoaded || hash === '/settings') {
+    if (!settingsLoaded || route.type === 'settings') {
         try {
             const backendSettings = await api.getSettings();
             utils.saveSettings(backendSettings);
@@ -296,33 +323,13 @@ async function handleRoute() {
 
     const settings = utils.getSettings();
     
-    // Direct airport route check
-    if (hash.startsWith('/airport/')) {
-        const parts = hash.split('/');
-        const icao = parts[2];
-        const view = parts[3] || 'dashboard';
-        
-        currentIcao = icao;
-        updateNavLinks(icao);
-        
-        // Check if we need to show loading (if current content is empty or for a different airport/view)
-        if (content.innerHTML === '' || content.querySelector('.loading') || !content.dataset.route || content.dataset.route !== hash) {
-             content.innerHTML = '<div class="loading">Loading airport data...</div>';
-             content.dataset.route = hash;
-        }
-        
-        await refreshCurrentView(false);
-        return;
-    }
+    // Update nav links based on parsed route
+    updateNavLinks(route);
 
-    // First-run logic
-    if (!settings.default_airport && hash !== '/settings' && hash !== '/search') {
-        stopRefreshTimer();
-        renderFirstRun(content);
-        return;
-    }
+    // Stop timer before rendering new view; view will start it if needed
+    stopRefreshTimer();
 
-    if (hash === '/') {
+    if (route.type === 'root') {
         if (settings.default_airport) {
             window.location.hash = `/airport/${settings.default_airport}`;
         } else {
@@ -331,51 +338,64 @@ async function handleRoute() {
         return;
     }
 
-    if (hash === '/search') {
-        stopRefreshTimer();
+    if (route.type === 'search') {
         statusBar.style.display = 'none';
         currentIcao = null;
-        updateNavLinks(null);
         renderSearch(content);
         return;
     }
 
-    if (hash === '/settings') {
-        stopRefreshTimer();
+    if (route.type === 'settings') {
         statusBar.style.display = 'none';
-        // Keep currentIcao for sub-nav persistence
-        updateNavLinks(currentIcao);
         renderSettings(content);
         return;
     }
 
-    if (hash === '/board') {
-        updateNavLinks(currentIcao);
-        if (content.innerHTML === '' || content.querySelector('.loading') || !content.innerHTML.includes('Airport Board')) {
+    if (route.type === 'about') {
+        statusBar.style.display = 'none';
+        renderAboutPage(content);
+        return;
+    }
+
+    if (route.type === 'board') {
+        if (content.innerHTML === '' || content.querySelector('.loading') || content.dataset.route !== 'board') {
              content.innerHTML = '<div class="loading">Loading Board...</div>';
+             content.dataset.route = 'board';
         }
         await refreshCurrentView(false);
         return;
     }
 
-    if (hash === '/about') {
-        stopRefreshTimer();
-        statusBar.style.display = 'none';
-        updateNavLinks(currentIcao);
-        renderAboutPage(content);
+    if (route.type === 'airport') {
+        currentIcao = route.icao;
+        const routeKey = `airport-${route.icao}-${route.view}`;
+        
+        if (content.innerHTML === '' || content.querySelector('.loading') || content.dataset.route !== routeKey) {
+             content.innerHTML = '<div class="loading">Loading airport data...</div>';
+             content.dataset.route = routeKey;
+        }
+        
+        await refreshCurrentView(false);
         return;
+    }
+
+    // Default: first run or search
+    if (!settings.default_airport) {
+        renderFirstRun(content);
+    } else {
+        window.location.hash = '/search';
     }
 }
 
 async function refreshCurrentView(isManual = false) {
     if (isRefreshing) return;
     
-    const hash = window.location.hash.substring(1) || '/';
+    const route = parseRoute();
     const content = document.getElementById('app-content');
     const statusBar = document.getElementById('status-bar');
     const lastUpdatedEl = document.getElementById('last-updated');
 
-    if (hash === '/board') {
+    if (route.type === 'board') {
         isRefreshing = true;
         try {
             await renderBoard(content);
@@ -393,14 +413,12 @@ async function refreshCurrentView(isManual = false) {
         return;
     }
 
-    if (!hash.startsWith('/airport/')) {
+    if (route.type !== 'airport') {
         stopRefreshTimer();
         return;
     }
 
-    const parts = hash.split('/');
-    const icao = parts[2];
-    const view = parts[3] || 'dashboard';
+    const { icao, view } = route;
 
     isRefreshing = true;
     try {
@@ -432,8 +450,6 @@ async function refreshCurrentView(isManual = false) {
     } catch (e) {
         console.error('Refresh failed:', e);
         
-        // If it's the initial load (not manual or auto-tick), show error page
-        // But if it's a background refresh, just show a warning callout
         if (content.querySelector('.loading')) {
             if (e.status === 404) {
                 content.innerHTML = `
@@ -464,13 +480,11 @@ async function refreshCurrentView(isManual = false) {
             statusBar.style.display = 'none';
             stopRefreshTimer();
         } else {
-            // Keep old data, but show error in status bar or as callout
             const errorMsg = document.createElement('div');
             errorMsg.className = 'warning-callout';
             errorMsg.style.marginTop = '1rem';
             errorMsg.innerHTML = `⚠️ Refresh failed at ${new Date().toLocaleTimeString()}. Using cached data.`;
             
-            // Only add if not already there
             if (!content.querySelector('.refresh-error')) {
                 errorMsg.classList.add('refresh-error');
                 content.prepend(errorMsg);
@@ -489,20 +503,18 @@ async function renderBoard(container) {
     if (favorites.length === 0) {
         container.innerHTML = `
             <div class="home-container">
-                <h1>Your Airport Board</h1>
-                <p>Save your favorite airports here for a compact overview.</p>
+                <h1>Your Airport Board is empty.</h1>
+                <p>Add airports to monitor them here. Saved in this browser only.</p>
                 <div class="card" style="max-width: 500px; margin: 1.5rem auto; text-align: left; background: var(--card-bg-alt);">
-                    <p><strong>Add your first airport:</strong></p>
+                    <p><strong>Add an airport:</strong></p>
                     <div class="home-search" style="position: relative; margin-top: 1rem;">
                         <input type="text" id="board-search" placeholder="Search ICAO, IATA, or City" autocomplete="off">
                     </div>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 1.5rem;">
-                        <strong>Privacy Note:</strong> Favorites are saved <strong>only in this browser</strong> on public instances.
-                    </p>
                 </div>
             </div>
         `;
         setupAutocomplete(document.getElementById('board-search'));
+        container.dataset.route = 'board';
         return;
     }
 
@@ -520,11 +532,11 @@ async function renderBoard(container) {
             </div>
         `;
         setupAutocomplete(document.getElementById('board-search'));
+        container.dataset.route = 'board';
     }
 
     const grid = document.getElementById('board-grid');
     
-    // Fetch all summaries using batch endpoint
     try {
         const idents = favorites.map(f => f.ident);
         const results = await api.getBatchSummaries(idents);
@@ -535,7 +547,7 @@ async function renderBoard(container) {
                 return `
                     <div class="card board-card danger" data-icao="${icao}">
                         <h3 style="margin: 0;">${icao}</h3>
-                        <p style="font-size: 0.85rem; color: var(--danger-text);">Failed to load: ${r.message || r.error}</p>
+                        <p style="font-size: 0.85rem; color: var(--danger-text);">Failed to load: ${r.error}</p>
                         <div class="board-card-actions" style="margin-top: auto;">
                             <button class="chip danger remove-favorite-btn" data-icao="${icao}" style="border: none; cursor: pointer; width: 100%;">Remove</button>
                         </div>
@@ -543,7 +555,14 @@ async function renderBoard(container) {
                 `;
             }
             return cards.renderBoardCard(r);
-        }).join('');
+        }).join('') + `
+            <div class="card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 200px; border: 2px dashed var(--border-color); background: transparent; box-shadow: none;">
+                <p style="color: var(--text-muted); margin-bottom: 1rem;">Add another</p>
+                <input type="text" id="board-inline-add" placeholder="ICAO..." style="width: 100px; text-align: center; text-transform: uppercase;">
+            </div>
+        `;
+
+        setupAutocomplete(document.getElementById('board-inline-add'));
 
         // Attach remove handlers
         grid.querySelectorAll('.remove-favorite-btn').forEach(btn => {
@@ -551,7 +570,7 @@ async function renderBoard(container) {
                 const icao = e.target.dataset.icao;
                 if (confirm(`Remove ${icao} from board?`)) {
                     await api.removeFavorite(icao);
-                    renderBoard(container); // Re-render
+                    renderBoard(container);
                 }
             });
         });
@@ -825,7 +844,7 @@ async function renderFullBrief(container, icao) {
                 <div>
                     <strong>Favored Runway</strong>
                     <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent);">${data.favored_runway.end || 'None'}</div>
-                    <div style="font-size: 0.9rem;">${data.favored_runway.reason}</div>
+                    <div style="font-size: 0.9rem;">${data.favored_runway.reason || 'Reason unavailable'}</div>
                 </div>
             </div>
 

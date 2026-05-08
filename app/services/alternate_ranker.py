@@ -17,47 +17,6 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
     compass_bearing = (initial_bearing + 360) % 360
     return round(compass_bearing, 1)
 
-async def fetch_candidate_weather(c: dict):
-    try:
-        metars = await aw_client.get_metar(c["icao"])
-        if metars and len(metars) > 0:
-            m = metars[0]
-            
-            vis = normalize_visibility(m.get("visib"))
-            ceil = get_ceiling(m.get("clouds"))
-            flt_cat = m.get("fltcat")
-            
-            if not flt_cat or flt_cat == "UNKNOWN":
-                if vis is not None or ceil is not None:
-                    flt_cat = derive_flight_category(ceil, vis)
-                else:
-                    flt_cat = "Rules unavailable"
-            
-            c["flight_category"] = flt_cat
-            c["ceiling_ft_agl"] = ceil
-            c["visibility_sm"] = vis
-            
-            wdir = m.get("wdir")
-            if wdir == "VRB":
-                wdir_val = "VRB"
-            elif isinstance(wdir, (int, float)):
-                wdir_val = str(int(wdir))
-            else:
-                wdir_val = str(wdir) if wdir else ""
-
-            wspd = m.get("wspd")
-            wgst = m.get("wgst")
-            
-            if wspd is not None:
-                wind_str = f"{wdir_val}@{wspd}"
-                if wgst:
-                    wind_str += f"G{wgst}"
-                c["wind"] = wind_str
-        else:
-            c["warnings"].append("METAR unavailable")
-    except Exception as e:
-        c["warnings"].append(f"Weather fetch failed: {str(e)}")
-
 async def find_alternates(origin_lat: float, origin_lon: float, origin_icao: str, radius_nm: float = 75) -> List[AlternateAirport]:
     all_airports = get_all_airports()
     candidates = []
@@ -80,9 +39,53 @@ async def find_alternates(origin_lat: float, origin_lon: float, origin_icao: str
                 "warnings": []
             })
             
-    # Fetch METARs concurrently
+    # Fetch METARs in batch to reduce requests
     if candidates:
-        await asyncio.gather(*(fetch_candidate_weather(c) for c in candidates))
+        icaos = [c["icao"] for c in candidates]
+        try:
+            metars = await aw_client.get_metars(icaos)
+            # Map by ICAO or icaoId
+            metar_map = {}
+            for m in metars:
+                ident = m.get("icao") or m.get("icaoId")
+                if ident:
+                    metar_map[ident] = m
+            
+            for c in candidates:
+                m = metar_map.get(c["icao"])
+                if not m:
+                    c["warnings"].append("METAR unavailable")
+                    continue
+                
+                # Parse minimal info
+                vis = normalize_visibility(m.get("visib"))
+                ceil = get_ceiling(m.get("clouds"))
+                flt_cat = m.get("fltcat")
+                
+                if not flt_cat or flt_cat == "UNKNOWN":
+                    if vis is not None or ceil is not None:
+                        flt_cat = derive_flight_category(ceil, vis)
+                    else:
+                        flt_cat = "Rules unavailable"
+                
+                c["flight_category"] = flt_cat
+                c["ceiling_ft_agl"] = ceil
+                c["visibility_sm"] = vis
+                
+                wdir = m.get("wdir")
+                wdir_val = "VRB" if wdir == "VRB" else str(int(wdir)) if isinstance(wdir, (int, float)) else str(wdir) if wdir else ""
+                wspd = m.get("wspd")
+                wgst = m.get("wgst")
+                
+                if wspd is not None:
+                    wind_str = f"{wdir_val}@{wspd}"
+                    if wgst:
+                        wind_str += f"G{wgst}"
+                    c["wind"] = wind_str
+                    
+        except Exception as e:
+            for c in candidates:
+                c["warnings"].append(f"Batch weather fetch failed: {str(e)}")
 
     # Score: Flight rules (VFR>MVFR>IFR>LIFR), then distance
     rules_score = {

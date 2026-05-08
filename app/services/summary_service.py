@@ -66,6 +66,17 @@ async def get_airport_summary(icao: str) -> AirportSummary:
     if any("fetch failed" in w.lower() for w in weather.warnings):
         weather_status = "error"
 
+    # Favored runway compacting for summary
+    favored_end = getattr(runways.favored_runway, "id", None) if runways.favored_runway else None
+    favored_reason = getattr(runways.favored_runway, "reason", "No runway data") if runways.favored_runway else "No runway data"
+    
+    if not field_weather_available and not nearby_weather_used:
+        favored_reason = "No field wind"
+    elif metar and metar.wind.speed_kt == 0:
+        favored_reason = "Calm"
+    elif not runways.runways:
+        favored_reason = "No runway data"
+
     return AirportSummary(
         icao=icao,
         iata_code=directory.get("iata_code"),
@@ -75,8 +86,8 @@ async def get_airport_summary(icao: str) -> AirportSummary:
         weather_status=weather_status,
         nearby_weather_used=nearby_weather_used,
         wind_summary=wind_summary,
-        favored_runway_end=getattr(runways.favored_runway, "id", None) if runways.favored_runway else None,
-        favored_runway_reason=getattr(runways.favored_runway, "reason", None) if runways.favored_runway else None,
+        favored_runway_end=favored_end,
+        favored_runway_reason=favored_reason,
         hazard_risk=getattr(hazards, "risk_level", "unknown"),
         has_runways=len(get_airport_runways(icao)) > 0,
         has_frequencies=len(directory.get("frequencies", [])) > 0,

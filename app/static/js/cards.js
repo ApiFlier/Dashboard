@@ -403,11 +403,14 @@ const cards = {
                 </div>
             `;
         }
+        const favoredId = analysis.favored_runway.id || 'None';
+        const favoredReason = analysis.favored_runway.reason || 'Reason unavailable';
+
         let html = `
             <div class="card">
                 <h2>Runway Analysis</h2>
                 ${utils.renderWarnings(analysis.warnings)}
-                <p><strong>Favored:</strong> ${analysis.favored_runway.id || 'None'} - ${analysis.favored_runway.reason}</p>
+                <p><strong>Favored:</strong> ${favoredId} — ${favoredReason}</p>
                 
                 <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; text-align:center;">
                     Simplified sketch below. <strong>Use official FAA diagrams for navigation.</strong>
@@ -660,6 +663,7 @@ const cards = {
         const fltCat = summary.flight_category;
         const wind = summary.wind_summary || 'N/A';
         const name = summary.name || "Information unavailable";
+        const favored = summary.favored_runway_end || summary.favored_runway_reason || 'N/A';
         
         return `
             <div class="card board-card" data-icao="${icao}">
@@ -678,7 +682,7 @@ const cards = {
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>Favored:</span>
-                        <strong>${summary.favored_runway_end || 'N/A'}</strong>
+                        <strong>${favored}</strong>
                     </div>
                     <div style="display: flex; justify-content: space-between;">
                         <span>Risk:</span>
