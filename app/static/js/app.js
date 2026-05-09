@@ -1461,7 +1461,13 @@ function renderOpsLogin(container, redirect) {
         try {
             const res = await api.opsLogin(userInput.value.trim(), passInput.value);
             localStorage.setItem('ops_session_token', res.token);
-            window.location.hash = redirect ? `/ops/${redirect}` : '/ops';
+            const target = redirect ? `/ops/${redirect}` : '/ops';
+            // If already at the target hash, hashchange won't fire — re-render directly.
+            if (window.location.hash === `#${target}`) {
+                handleRoute();
+            } else {
+                window.location.hash = target;
+            }
         } catch (e) {
             errEl.innerText = e.message || 'Login failed.';
             errEl.style.display = 'block';

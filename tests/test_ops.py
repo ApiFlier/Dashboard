@@ -27,8 +27,8 @@ def ops_client():
 
 @pytest.fixture
 def ops_token(ops_client):
-    """Returns a valid session token for the default Meeks admin."""
-    res = ops_client.post("/api/ops/auth/login", json={"username": "Meeks", "password": "Meeks"})
+    """Returns a valid session token for the default meeks admin."""
+    res = ops_client.post("/api/ops/auth/login", json={"username": "meeks", "password": "meeks"})
     assert res.status_code == 200, f"Login failed: {res.json()}"
     return res.json()["token"]
 
@@ -55,7 +55,7 @@ def test_ops_tables_exist(ops_client):
 
 
 def test_default_admin_bootstrapped(ops_client):
-    """Default Meeks/Meeks admin must exist after startup."""
+    """Default meeks/meeks admin must exist after startup."""
     import sqlite3
     from app.core.config import settings as cfg
     conn = sqlite3.connect(cfg.DB_PATH)
@@ -65,7 +65,7 @@ def test_default_admin_bootstrapped(ops_client):
     rows = cursor.fetchall()
     conn.close()
     usernames = [r["username"] for r in rows]
-    assert "Meeks" in usernames
+    assert "meeks" in usernames
 
 
 # ---------------------------------------------------------------------------
@@ -73,15 +73,29 @@ def test_default_admin_bootstrapped(ops_client):
 # ---------------------------------------------------------------------------
 
 def test_login_valid_credentials(ops_client):
-    res = ops_client.post("/api/ops/auth/login", json={"username": "Meeks", "password": "Meeks"})
+    res = ops_client.post("/api/ops/auth/login", json={"username": "meeks", "password": "meeks"})
     assert res.status_code == 200
     data = res.json()
     assert "token" in data
-    assert data["username"] == "Meeks"
+    assert data["username"] == "meeks"
+
+
+def test_login_case_insensitive_username(ops_client):
+    """Username lookup is case-insensitive: MEEKS and Meeks both resolve to stored 'meeks'."""
+    for variant in ("MEEKS", "Meeks", "MeEkS"):
+        res = ops_client.post("/api/ops/auth/login", json={"username": variant, "password": "meeks"})
+        assert res.status_code == 200, f"Login failed for username variant '{variant}': {res.json()}"
+        assert res.json()["username"] == "meeks"
 
 
 def test_login_invalid_password(ops_client):
-    res = ops_client.post("/api/ops/auth/login", json={"username": "Meeks", "password": "wrong"})
+    res = ops_client.post("/api/ops/auth/login", json={"username": "meeks", "password": "wrong"})
+    assert res.status_code == 401
+
+
+def test_login_password_is_case_sensitive(ops_client):
+    """Password must match exactly — 'Meeks' is not the same as 'meeks'."""
+    res = ops_client.post("/api/ops/auth/login", json={"username": "meeks", "password": "Meeks"})
     assert res.status_code == 401
 
 
@@ -264,7 +278,7 @@ def test_old_session_invalidated_after_username_change(ops_client, ops_token):
     # Rename the user (requires active session + current password)
     res = ops_client.post(
         "/api/ops/auth/change-credentials",
-        json={"current_password": "Meeks", "new_username": "MeeksRenamed"},
+        json={"current_password": "meeks", "new_username": "MeeksRenamed"},
         headers=old_headers,
     )
     assert res.status_code == 200

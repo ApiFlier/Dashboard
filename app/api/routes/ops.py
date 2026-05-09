@@ -67,10 +67,11 @@ async def require_ops_auth(
 async def ops_login(req: LoginRequest):
     if not req.username or not req.password:
         raise HTTPException(status_code=400, detail="Username and password are required.")
-    if not authenticate_user(req.username, req.password):
+    stored_username = authenticate_user(req.username, req.password)
+    if stored_username is None:
         raise HTTPException(status_code=401, detail="Invalid username or password.")
-    token = create_session(req.username)
-    return {"token": token, "username": req.username}
+    token = create_session(stored_username)
+    return {"token": token, "username": stored_username}
 
 
 @router.post("/ops/auth/change-credentials")
@@ -86,7 +87,7 @@ async def ops_change_credentials(
     if not current_username:
         raise HTTPException(status_code=401, detail="Invalid or expired session.")
 
-    if not authenticate_user(current_username, req.current_password):
+    if authenticate_user(current_username, req.current_password) is None:
         raise HTTPException(status_code=403, detail="Current password is incorrect.")
 
     if req.new_password:

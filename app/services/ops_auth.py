@@ -20,17 +20,20 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
-def authenticate_user(username: str, password: str) -> bool:
+def authenticate_user(username: str, password: str) -> Optional[str]:
+    """Returns the stored username if credentials are valid (case-insensitive username match), else None."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT password_hash FROM admin_users WHERE username = ?",
+            "SELECT username, password_hash FROM admin_users WHERE LOWER(username) = LOWER(?)",
             (username,)
         )
         row = cursor.fetchone()
         if not row:
-            return False
-        return verify_password(password, row["password_hash"])
+            return None
+        if not verify_password(password, row["password_hash"]):
+            return None
+        return row["username"]
 
 
 def create_session(username: str) -> str:
@@ -92,17 +95,17 @@ def invalidate_sessions(username: str):
 
 
 def bootstrap_default_admin():
-    """Create the default Meeks/Meeks admin if no admin users exist yet."""
+    """Create the default meeks/meeks admin if no admin users exist yet."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) as cnt FROM admin_users")
         row = cursor.fetchone()
         if row["cnt"] == 0:
             now = datetime.now(timezone.utc).isoformat()
-            password_hash = hash_password("Meeks")
+            password_hash = hash_password("meeks")
             conn.execute(
                 "INSERT INTO admin_users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                ("Meeks", password_hash, now, now)
+                ("meeks", password_hash, now, now)
             )
             conn.commit()
-            logger.info("Bootstrapped default Ops Mode admin: Meeks")
+            logger.info("Bootstrapped default Ops Mode admin: meeks")

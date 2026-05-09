@@ -140,7 +140,7 @@ Recommended settings for public deployments:
 
 Always serve over HTTPS when publicly exposed. Backup and restore scripts are CLI-only and are not exposed as web endpoints.
 
-> **Ops Mode and public deployments:** If you expose this instance publicly, ensure you have changed the default Ops Mode credentials (`Meeks / Meeks`) before doing so. Ops Mode endpoints are protected by their own login, but the default credentials are well-known. See the [Ops Mode](#ops-mode) section below.
+> **Ops Mode and public deployments:** If you expose this instance publicly, ensure you have changed the default Ops Mode credentials (`meeks / meeks`) before doing so. Ops Mode endpoints are protected by their own login, but the default credentials are well-known. See the [Ops Mode](#ops-mode) section below.
 
 **Content Security Policy:** The app enforces a strict CSP. If you deploy behind Cloudflare and see CSP violation warnings for `static.cloudflareinsights.com`, disable Web Analytics in your Cloudflare dashboard rather than weakening the CSP.
 
@@ -161,8 +161,8 @@ Navigate to `#/ops` to access Ops Mode. Future versions will add Shift Handoff, 
 When the container first starts, a default admin account is created automatically:
 
 ```
-Username: Meeks
-Password: Meeks
+Username: meeks
+Password: meeks
 ```
 
 > **Change these immediately after first login.**
@@ -179,7 +179,7 @@ Go to `#/ops` → **Change Credentials** to update username and password. Creden
 | Backend protection | All `/api/ops/*` endpoints require a valid session Bearer token or `X-Admin-Token` |
 | Session storage | Token kept in browser `localStorage` for persistence across tabs and restarts — acceptable for a self-hosted operator machine; do not share the browser profile |
 | Public dashboard | Completely unaffected — read-only behavior is unchanged |
-| Default credentials | `Meeks / Meeks` on first run only; change immediately |
+| Default credentials | `meeks / meeks` on first run only; change immediately |
 
 ### Ops Log Categories
 
