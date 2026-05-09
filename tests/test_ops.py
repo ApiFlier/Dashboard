@@ -503,3 +503,119 @@ def test_migration_custom_username_not_overwritten(migration_db):
     from app.services.ops_auth import bootstrap_default_admin, authenticate_user
     bootstrap_default_admin()
     assert authenticate_user("tower_ops", "Meeks") is not None
+
+
+# ---------------------------------------------------------------------------
+# Inspection Checklist endpoints
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+_INSPECTION_PAYLOAD = {
+    "airport_ident": "KAGC",
+    "inspection_type": "Daily Field Review",
+    "completed_by": "Alice",
+    "checklist_json": _json.dumps([
+        {"item": "Runways reviewed", "checked": True},
+        {"item": "Taxiways reviewed", "checked": True},
+        {"item": "Weather reviewed", "checked": False},
+    ]),
+    "notes": "Everything nominal.",
+}
+
+
+def test_get_inspections_unauthenticated(ops_client):
+    res = ops_client.get("/api/ops/inspections")
+    assert res.status_code == 401
+
+
+def test_post_inspection_unauthenticated(ops_client):
+    res = ops_client.post("/api/ops/inspections", json=_INSPECTION_PAYLOAD)
+    assert res.status_code == 401
+
+
+def test_create_inspection_authenticated(ops_client, ops_token):
+    res = ops_client.post(
+        "/api/ops/inspections",
+        json=_INSPECTION_PAYLOAD,
+        headers=auth_headers(ops_token),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert "id" in data
+    assert data["status"] == "created"
+
+
+def test_get_inspections_authenticated(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/inspections", json=_INSPECTION_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/inspections", headers=headers)
+    assert res.status_code == 200
+    entries = res.json()
+    assert len(entries) >= 1
+    assert entries[0]["inspection_type"] == "Daily Field Review"
+    assert entries[0]["completed_by"] == "Alice"
+
+
+def test_inspection_airport_ident_uppercased(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    payload = {**_INSPECTION_PAYLOAD, "airport_ident": "kagc"}
+    ops_client.post("/api/ops/inspections", json=payload, headers=headers)
+    res = ops_client.get("/api/ops/inspections", headers=headers)
+    assert all(e["airport_ident"] == e["airport_ident"].upper() for e in res.json())
+
+
+def test_inspection_airport_filter(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/inspections", json={**_INSPECTION_PAYLOAD, "airport_ident": "KPIT"}, headers=headers)
+    ops_client.post("/api/ops/inspections", json={**_INSPECTION_PAYLOAD, "airport_ident": "KAVP"}, headers=headers)
+    res = ops_client.get("/api/ops/inspections?airport_ident=KPIT", headers=headers)
+    assert res.status_code == 200
+    entries = res.json()
+    assert all(e["airport_ident"] == "KPIT" for e in entries)
+    assert len(entries) == 1
+
+
+def test_inspection_checklist_json_stored_correctly(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/inspections", json=_INSPECTION_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/inspections", headers=headers)
+    stored = _json.loads(res.json()[0]["checklist_json"])
+    assert isinstance(stored, list)
+    assert stored[0]["item"] == "Runways reviewed"
+    assert stored[0]["checked"] is True
+    assert stored[2]["checked"] is False
+
+
+def test_inspection_invalid_checklist_json_rejected(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    bad = {**_INSPECTION_PAYLOAD, "checklist_json": "not valid json {{{"}
+    res = ops_client.post("/api/ops/inspections", json=bad, headers=headers)
+    assert res.status_code == 400
+
+
+def test_inspection_missing_required_fields(ops_client, ops_token):
+    """POST without inspection_type must be rejected."""
+    headers = auth_headers(ops_token)
+    res = ops_client.post(
+        "/api/ops/inspections",
+        json={"airport_ident": "KAGC", "checklist_json": "[]"},
+        headers=headers,
+    )
+    assert res.status_code == 422
+
+
+def test_inspection_x_admin_token(ops_client, ops_token):
+    with mock.patch("app.core.config.settings.ADMIN_API_TOKEN", "test-secret"):
+        res = ops_client.get(
+            "/api/ops/inspections",
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert res.status_code == 200
+
+
+def test_inspection_created_by_is_authenticated_user(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/inspections", json=_INSPECTION_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/inspections", headers=headers)
+    assert res.json()[0]["created_by"] == "meeks"

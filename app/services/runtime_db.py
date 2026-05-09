@@ -10,7 +10,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 def get_db_path() -> str:
     return settings.DB_PATH
@@ -219,6 +219,25 @@ def run_migrations(conn: sqlite3.Connection):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_handoffs_airport ON ops_handoffs(airport_ident)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_handoffs_created_at ON ops_handoffs(created_at)")
         set_schema_version(conn, 6)
+
+    if current_version < 7:
+        logger.info("Running schema migration to version 7")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_inspections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                inspection_type TEXT NOT NULL,
+                completed_by TEXT,
+                checklist_json TEXT NOT NULL,
+                notes TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_inspections_airport ON ops_inspections(airport_ident)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_inspections_created_at ON ops_inspections(created_at)")
+        set_schema_version(conn, 7)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()

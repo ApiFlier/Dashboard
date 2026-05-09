@@ -165,5 +165,15 @@ const api = {
 
     async opsCreateHandoff(entry) {
         return this._opsPost('/api/ops/handoffs', entry);
+    },
+
+    async opsGetInspections(airportIdent, limit = 50) {
+        const params = new URLSearchParams({ limit });
+        if (airportIdent) params.set('airport_ident', airportIdent);
+        return this._opsGet(`/api/ops/inspections?${params}`);
+    },
+
+    async opsCreateInspection(entry) {
+        return this._opsPost('/api/ops/inspections', entry);
     }
 };

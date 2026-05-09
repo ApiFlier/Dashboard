@@ -1426,6 +1426,8 @@ async function handleOpsRoute(subpage, content) {
         await renderOpsLog(content);
     } else if (subpage === 'handoff') {
         await renderOpsHandoff(content);
+    } else if (subpage === 'inspection') {
+        await renderOpsInspection(content);
     } else {
         renderOpsHome(content);
     }
@@ -1531,10 +1533,10 @@ function renderOpsHome(container) {
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Structured shift-change summaries and handoff notes.</p>
                     <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
-                <div class="card" style="opacity: 0.6;">
+                <div class="card" style="cursor: pointer; border: 2px solid var(--accent);" id="ops-card-inspection">
                     <h3 style="margin: 0 0 0.5rem 0;">Inspection Checklist</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Daily and periodic field inspection records.</p>
-                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Field/facility inspection notes and operational awareness records.</p>
+                    <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
                 <div class="card" style="opacity: 0.6;">
                     <h3 style="margin: 0 0 0.5rem 0;">Maintenance Reminders</h3>
@@ -1553,6 +1555,10 @@ function renderOpsHome(container) {
 
     document.getElementById('ops-card-handoff').addEventListener('click', () => {
         window.location.hash = '/ops/handoff';
+    });
+
+    document.getElementById('ops-card-inspection').addEventListener('click', () => {
+        window.location.hash = '/ops/inspection';
     });
 
     document.getElementById('ops-admin-settings-btn').addEventListener('click', () => {
@@ -1973,6 +1979,220 @@ async function renderOpsHandoff(container) {
         if (e.key === 'Enter') {
             const val = e.target.value.trim().toUpperCase();
             await loadHandoffs(val);
+        }
+    });
+}
+
+async function renderOpsInspection(container) {
+    const INSPECTION_TYPES = [
+        'Daily Field Review',
+        'Facility Review',
+        'Weather/Hazards Review',
+        'Lighting/Visual Aid Review',
+        'Other',
+    ];
+    const DEFAULT_ITEMS = [
+        'Runways reviewed',
+        'Taxiways reviewed',
+        'Weather reviewed',
+        'Hazards reviewed',
+        'Runway/favored runway reviewed',
+        'Lighting/visual aids reviewed',
+        'Open maintenance items reviewed',
+        'Unusual activity noted',
+    ];
+    const inputStyle = 'width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;';
+    const labelStyle = 'display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;';
+
+    const parseChecklist = (json) => {
+        try { return JSON.parse(json || '[]'); } catch { return []; }
+    };
+
+    container.innerHTML = `
+        <div style="max-width: 1000px; margin: 0 auto;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h1>Inspection Checklist</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Complete and review field/facility inspection notes for this AirfieldOps instance.</p>
+                </div>
+                <a href="#/ops" class="chip" style="border: 1px solid var(--border-color); text-decoration: none; padding: 0.4rem 1rem; color: var(--text); background: var(--chip-bg);">← Back to Ops</a>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h2 style="margin-bottom: 1rem;">Add Inspection</h2>
+                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem;">
+                    <div>
+                        <label style="${labelStyle}">Airport ICAO</label>
+                        <input type="text" id="insp-airport" placeholder="e.g. KAGC" style="${inputStyle} text-transform: uppercase;">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Inspection Type</label>
+                        <select id="insp-type" style="${inputStyle}">
+                            ${INSPECTION_TYPES.map(t => `<option>${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Completed By</label>
+                        <input type="text" id="insp-completed-by" placeholder="Name" style="${inputStyle}">
+                    </div>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="${labelStyle}">Checklist Items</label>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.4rem 1.5rem; padding: 0.75rem; background: var(--card-bg, var(--bg)); border: 1px solid var(--input-border); border-radius: 4px;">
+                        ${DEFAULT_ITEMS.map((item, i) => `
+                            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; padding: 0.2rem 0;">
+                                <input type="checkbox" id="insp-item-${i}" style="accent-color: var(--accent); width: 1rem; height: 1rem; flex-shrink: 0;">
+                                ${item}
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="${labelStyle}">Notes</label>
+                    <textarea id="insp-notes" rows="2" placeholder="Additional observations, discrepancies, or follow-up items..." style="${inputStyle} resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button id="insp-submit-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Add Inspection</button>
+                    <span id="insp-submit-msg" style="font-size: 0.9rem;"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <h2 style="margin: 0;">Recent Inspections</h2>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="insp-filter-airport" placeholder="Filter by airport..." style="padding: 0.4rem 0.6rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; width: 160px; text-transform: uppercase;">
+                        <button id="insp-filter-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text);">Filter</button>
+                        <button id="insp-filter-clear-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text-muted);">Clear</button>
+                    </div>
+                </div>
+                <div id="insp-entries-container">
+                    <div class="loading">Loading inspections...</div>
+                </div>
+            </div>
+
+            <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Inspection Checklist supports internal field/facility review notes and operational awareness. Not a certified inspection compliance system. Not for certified flight dispatch, release, navigation, or operational control.</p>
+        </div>
+    `;
+
+    const loadInspections = async (airportFilter) => {
+        const c = document.getElementById('insp-entries-container');
+        c.innerHTML = '<div class="loading">Loading...</div>';
+        try {
+            const entries = await api.opsGetInspections(airportFilter || '', 50);
+            if (entries.length === 0) {
+                c.innerHTML = `<p style="color: var(--text-muted); padding: 1rem 0;">No inspections found.</p>`;
+                return;
+            }
+            c.innerHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time (UTC)</th>
+                                <th>Airport</th>
+                                <th>Type</th>
+                                <th>Completed By</th>
+                                <th>Items</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${entries.map(e => {
+                                const items = parseChecklist(e.checklist_json);
+                                const checked = items.filter(i => i.checked).length;
+                                const total = items.length;
+                                const allDone = total > 0 && checked === total;
+                                return `
+                                <tr>
+                                    <td style="font-size: 0.8rem; white-space: nowrap;">${new Date(e.created_at).toUTCString().replace(' GMT', 'Z').replace(/ \d{4}/, '').replace(',', '')}</td>
+                                    <td><strong>${e.airport_ident}</strong></td>
+                                    <td style="font-size: 0.85rem;">${utils.escapeHtml(e.inspection_type)}</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${e.completed_by ? utils.escapeHtml(e.completed_by) : '—'}</td>
+                                    <td><span class="chip ${allDone ? 'info' : ''}" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: ${allDone ? '' : 'var(--text-muted)'};">${checked}/${total}</span></td>
+                                    <td style="max-width: 260px; word-break: break-word; font-size: 0.85rem;">${e.notes ? utils.escapeHtml(e.notes) : '—'}</td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'inspection');
+                return;
+            }
+            c.innerHTML = `<div class="warning-callout">Failed to load inspections: ${e.message}</div>`;
+        }
+    };
+
+    await loadInspections('');
+
+    document.getElementById('insp-submit-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('insp-submit-btn');
+        const msgEl = document.getElementById('insp-submit-msg');
+        const airport = document.getElementById('insp-airport').value.trim().toUpperCase();
+        const inspType = document.getElementById('insp-type').value;
+        const completedBy = document.getElementById('insp-completed-by').value.trim();
+        const notes = document.getElementById('insp-notes').value.trim();
+
+        if (!airport) { msgEl.style.color = 'var(--danger)'; msgEl.innerText = 'Airport ICAO is required.'; return; }
+
+        const checklist = DEFAULT_ITEMS.map((item, i) => ({
+            item,
+            checked: document.getElementById(`insp-item-${i}`).checked,
+        }));
+
+        btn.disabled = true;
+        btn.innerText = 'Adding...';
+        msgEl.innerText = '';
+
+        try {
+            await api.opsCreateInspection({
+                airport_ident: airport,
+                inspection_type: inspType,
+                completed_by: completedBy || null,
+                checklist_json: JSON.stringify(checklist),
+                notes: notes || null,
+            });
+            const checkedCount = checklist.filter(i => i.checked).length;
+            msgEl.style.color = 'var(--success)';
+            msgEl.innerText = `Inspection recorded (${checkedCount}/${DEFAULT_ITEMS.length} items checked).`;
+            document.getElementById('insp-airport').value = '';
+            document.getElementById('insp-completed-by').value = '';
+            document.getElementById('insp-notes').value = '';
+            DEFAULT_ITEMS.forEach((_, i) => { document.getElementById(`insp-item-${i}`).checked = false; });
+            const currentFilter = document.getElementById('insp-filter-airport').value.trim().toUpperCase();
+            await loadInspections(currentFilter);
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'inspection');
+                return;
+            }
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = e.message || 'Failed to record inspection.';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Add Inspection';
+        }
+    });
+
+    document.getElementById('insp-filter-btn').addEventListener('click', async () => {
+        const val = document.getElementById('insp-filter-airport').value.trim().toUpperCase();
+        await loadInspections(val);
+    });
+
+    document.getElementById('insp-filter-clear-btn').addEventListener('click', async () => {
+        document.getElementById('insp-filter-airport').value = '';
+        await loadInspections('');
+    });
+
+    document.getElementById('insp-filter-airport').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const val = e.target.value.trim().toUpperCase();
+            await loadInspections(val);
         }
     });
 }

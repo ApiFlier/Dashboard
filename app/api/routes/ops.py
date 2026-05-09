@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -46,6 +47,14 @@ class OpsHandoffCreate(BaseModel):
     weather_summary: Optional[str] = None
     operations_summary: Optional[str] = None
     open_items: Optional[str] = None
+
+
+class OpsInspectionCreate(BaseModel):
+    airport_ident: str
+    inspection_type: str
+    completed_by: Optional[str] = None
+    checklist_json: str
+    notes: Optional[str] = None
 
 
 # --- Auth dependency ---
@@ -227,6 +236,66 @@ async def create_ops_handoff(
                 entry.weather_summary.strip() if entry.weather_summary else None,
                 entry.operations_summary.strip() if entry.operations_summary else None,
                 entry.open_items.strip() if entry.open_items else None,
+                username,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+    return {"id": row_id, "status": "created"}
+
+
+# --- Ops inspection endpoints ---
+
+@router.get("/ops/inspections")
+async def get_ops_inspections(
+    airport_ident: Optional[str] = None,
+    limit: int = 50,
+    username: str = Depends(require_ops_auth),
+):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if airport_ident:
+            cursor.execute(
+                "SELECT * FROM ops_inspections WHERE airport_ident = ? ORDER BY created_at DESC LIMIT ?",
+                (airport_ident.upper(), limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM ops_inspections ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+@router.post("/ops/inspections", status_code=201)
+async def create_ops_inspection(
+    entry: OpsInspectionCreate,
+    username: str = Depends(require_ops_auth),
+):
+    if not entry.airport_ident.strip():
+        raise HTTPException(status_code=400, detail="airport_ident cannot be empty.")
+    if not entry.inspection_type.strip():
+        raise HTTPException(status_code=400, detail="inspection_type cannot be empty.")
+    try:
+        json.loads(entry.checklist_json)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="checklist_json must be valid JSON.")
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO ops_inspections
+               (airport_ident, inspection_type, completed_by, checklist_json,
+                notes, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry.airport_ident.strip().upper(),
+                entry.inspection_type.strip(),
+                entry.completed_by.strip() if entry.completed_by else None,
+                entry.checklist_json,
+                entry.notes.strip() if entry.notes else None,
                 username,
                 now,
                 now,
