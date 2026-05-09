@@ -329,6 +329,207 @@ async def create_ops_inspection(
     return {"id": row_id, "status": "created"}
 
 
+# --- Ops overview endpoint ---
+
+@router.get("/ops/overview")
+async def get_ops_overview(
+    airport_ident: Optional[str] = None,
+    username: str = Depends(require_ops_auth),
+):
+    today_str = datetime.now(timezone.utc).date().isoformat()
+    ap = airport_ident.upper() if airport_ident else None
+    ap_params = [ap] if ap else []
+    ap_where = "WHERE airport_ident = ?" if ap else ""
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        def _count_today(table: str) -> int:
+            if ap:
+                cursor.execute(
+                    f"SELECT COUNT(*) as cnt FROM {table} WHERE airport_ident = ? AND created_at LIKE ?",
+                    [ap, f"{today_str}%"],
+                )
+            else:
+                cursor.execute(
+                    f"SELECT COUNT(*) as cnt FROM {table} WHERE created_at LIKE ?",
+                    [f"{today_str}%"],
+                )
+            return cursor.fetchone()["cnt"]
+
+        def _count_maint_status(status_val: str) -> int:
+            if ap:
+                cursor.execute(
+                    "SELECT COUNT(*) as cnt FROM ops_maintenance_items WHERE airport_ident = ? AND status = ?",
+                    [ap, status_val],
+                )
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) as cnt FROM ops_maintenance_items WHERE status = ?", [status_val]
+                )
+            return cursor.fetchone()["cnt"]
+
+        def _count_overdue() -> int:
+            if ap:
+                cursor.execute(
+                    "SELECT COUNT(*) as cnt FROM ops_maintenance_items"
+                    " WHERE airport_ident = ? AND status != 'Closed'"
+                    " AND due_date IS NOT NULL AND due_date != '' AND due_date < ?",
+                    [ap, today_str],
+                )
+            else:
+                cursor.execute(
+                    "SELECT COUNT(*) as cnt FROM ops_maintenance_items"
+                    " WHERE status != 'Closed' AND due_date IS NOT NULL AND due_date != '' AND due_date < ?",
+                    [today_str],
+                )
+            return cursor.fetchone()["cnt"]
+
+        log_today = _count_today("ops_log_entries")
+        handoff_today = _count_today("ops_handoffs")
+        inspection_today = _count_today("ops_inspections")
+        open_maint = _count_maint_status("Open")
+        in_progress_maint = _count_maint_status("In Progress")
+        overdue_maint = _count_overdue()
+
+        # Latest handoff and inspection
+        cursor.execute(f"SELECT * FROM ops_handoffs {ap_where} ORDER BY created_at DESC LIMIT 1", ap_params)
+        row = cursor.fetchone()
+        latest_handoff = dict(row) if row else None
+
+        cursor.execute(f"SELECT * FROM ops_inspections {ap_where} ORDER BY created_at DESC LIMIT 1", ap_params)
+        row = cursor.fetchone()
+        latest_inspection = dict(row) if row else None
+
+        # Needs attention: overdue maintenance + recent warning/critical log entries
+        if ap:
+            cursor.execute(
+                "SELECT * FROM ops_maintenance_items"
+                " WHERE airport_ident = ? AND status != 'Closed'"
+                " AND due_date IS NOT NULL AND due_date != '' AND due_date < ?"
+                " ORDER BY due_date ASC LIMIT 10",
+                [ap, today_str],
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM ops_maintenance_items"
+                " WHERE status != 'Closed' AND due_date IS NOT NULL AND due_date != '' AND due_date < ?"
+                " ORDER BY due_date ASC LIMIT 10",
+                [today_str],
+            )
+        overdue_rows = cursor.fetchall()
+
+        if ap:
+            cursor.execute(
+                "SELECT * FROM ops_log_entries WHERE airport_ident = ? AND severity IN ('Warning', 'Critical')"
+                " ORDER BY created_at DESC LIMIT 5",
+                [ap],
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM ops_log_entries WHERE severity IN ('Warning', 'Critical')"
+                " ORDER BY created_at DESC LIMIT 5"
+            )
+        alert_log_rows = cursor.fetchall()
+
+        needs_attention: List[dict] = []
+        for row in overdue_rows:
+            d = dict(row)
+            needs_attention.append({
+                "type": "maintenance",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": d["title"],
+                "priority": d["priority"],
+                "due_date": d["due_date"],
+                "status": d["status"],
+                "reason": "overdue",
+            })
+        for row in alert_log_rows:
+            d = dict(row)
+            needs_attention.append({
+                "type": "log",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": f"{d['category']}: {d['entry_text'][:80]}",
+                "severity": d["severity"],
+                "created_at": d["created_at"],
+                "reason": "severity",
+            })
+        needs_attention = needs_attention[:10]
+
+        # Recent activity: latest 5 from each table, merged and sorted
+        recent: List[dict] = []
+
+        cursor.execute(f"SELECT * FROM ops_log_entries {ap_where} ORDER BY created_at DESC LIMIT 5", ap_params)
+        for row in cursor.fetchall():
+            d = dict(row)
+            recent.append({
+                "type": "log",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": f"{d['category']}: {d['entry_text'][:80]}",
+                "created_at": d["created_at"],
+                "meta": {"severity": d["severity"]},
+            })
+
+        cursor.execute(f"SELECT * FROM ops_handoffs {ap_where} ORDER BY created_at DESC LIMIT 5", ap_params)
+        for row in cursor.fetchall():
+            d = dict(row)
+            recent.append({
+                "type": "handoff",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": d["shift_name"],
+                "created_at": d["created_at"],
+                "meta": {},
+            })
+
+        cursor.execute(f"SELECT * FROM ops_inspections {ap_where} ORDER BY created_at DESC LIMIT 5", ap_params)
+        for row in cursor.fetchall():
+            d = dict(row)
+            recent.append({
+                "type": "inspection",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": d["inspection_type"],
+                "created_at": d["created_at"],
+                "meta": {},
+            })
+
+        cursor.execute(f"SELECT * FROM ops_maintenance_items {ap_where} ORDER BY created_at DESC LIMIT 5", ap_params)
+        for row in cursor.fetchall():
+            d = dict(row)
+            recent.append({
+                "type": "maintenance",
+                "id": d["id"],
+                "airport_ident": d["airport_ident"],
+                "summary": d["title"],
+                "created_at": d["created_at"],
+                "meta": {"status": d["status"], "priority": d["priority"]},
+            })
+
+        recent.sort(key=lambda x: x["created_at"], reverse=True)
+        recent_activity = recent[:10]
+
+    return {
+        "today": {
+            "ops_log_count": log_today,
+            "handoff_count": handoff_today,
+            "inspection_count": inspection_today,
+            "open_maintenance_count": open_maint,
+            "in_progress_maintenance_count": in_progress_maint,
+            "overdue_maintenance_count": overdue_maint,
+        },
+        "latest": {
+            "handoff": latest_handoff,
+            "inspection": latest_inspection,
+        },
+        "needs_attention": needs_attention,
+        "recent_activity": recent_activity,
+    }
+
+
 # --- Ops maintenance endpoints ---
 
 @router.get("/ops/maintenance")

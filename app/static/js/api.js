@@ -157,6 +157,11 @@ const api = {
         return this._opsPost('/api/ops/auth/change-credentials', body);
     },
 
+    async opsOverview(airportIdent) {
+        const params = airportIdent ? `?airport_ident=${encodeURIComponent(airportIdent)}` : '';
+        return this._opsGet(`/api/ops/overview${params}`);
+    },
+
     async opsGetHandoffs(airportIdent, limit = 50) {
         const params = new URLSearchParams({ limit });
         if (airportIdent) params.set('airport_ident', airportIdent);

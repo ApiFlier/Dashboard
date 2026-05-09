@@ -314,6 +314,129 @@ def test_public_dashboard_still_works(ops_client):
 
 
 # ---------------------------------------------------------------------------
+# Ops Overview endpoint
+# ---------------------------------------------------------------------------
+
+def test_overview_unauthenticated(ops_client):
+    res = ops_client.get("/api/ops/overview")
+    assert res.status_code == 401
+
+
+def test_overview_authenticated_empty_data(ops_client, ops_token):
+    res = ops_client.get("/api/ops/overview", headers=auth_headers(ops_token))
+    assert res.status_code == 200
+    data = res.json()
+    assert "today" in data
+    assert "needs_attention" in data
+    assert "recent_activity" in data
+    assert "latest" in data
+    t = data["today"]
+    assert t["ops_log_count"] == 0
+    assert t["handoff_count"] == 0
+    assert t["inspection_count"] == 0
+    assert t["open_maintenance_count"] == 0
+    assert t["in_progress_maintenance_count"] == 0
+    assert t["overdue_maintenance_count"] == 0
+    assert data["recent_activity"] == []
+    assert data["needs_attention"] == []
+
+
+def test_overview_counts_log_entries(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/logs", json={
+        "airport_ident": "KAGC", "category": "General", "severity": "Info",
+        "entry_text": "Test log entry", "created_by": "meeks",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    assert res.json()["today"]["ops_log_count"] >= 1
+
+
+def test_overview_counts_handoffs(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/handoffs", json={
+        "airport_ident": "KAGC", "shift_name": "Day Shift",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    assert res.json()["today"]["handoff_count"] >= 1
+
+
+def test_overview_counts_inspections(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/inspections", json={
+        "airport_ident": "KAGC", "inspection_type": "Daily Field Review",
+        "checklist_json": "[]",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    assert res.json()["today"]["inspection_count"] >= 1
+
+
+def test_overview_counts_open_and_in_progress_maintenance(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json={
+        "airport_ident": "KAGC", "title": "Open item", "priority": "Low", "status": "Open",
+    }, headers=headers)
+    ops_client.post("/api/ops/maintenance", json={
+        "airport_ident": "KAGC", "title": "IP item", "priority": "Low", "status": "In Progress",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    t = res.json()["today"]
+    assert t["open_maintenance_count"] >= 1
+    assert t["in_progress_maintenance_count"] >= 1
+
+
+def test_overview_counts_overdue_maintenance(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json={
+        "airport_ident": "KAGC", "title": "Overdue item",
+        "priority": "High", "status": "Open", "due_date": "2020-01-01",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    assert res.json()["today"]["overdue_maintenance_count"] >= 1
+
+
+def test_overview_recent_activity_includes_records(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/logs", json={
+        "airport_ident": "KAGC", "category": "Weather", "severity": "Info",
+        "entry_text": "Wind shift noted", "created_by": "meeks",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    activity = res.json()["recent_activity"]
+    assert len(activity) >= 1
+    types = [a["type"] for a in activity]
+    assert "log" in types
+
+
+def test_overview_needs_attention_includes_overdue_maintenance(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json={
+        "airport_ident": "KAGC", "title": "PAPI bulb out",
+        "priority": "High", "status": "Open", "due_date": "2020-01-01",
+    }, headers=headers)
+    res = ops_client.get("/api/ops/overview", headers=headers)
+    attention = res.json()["needs_attention"]
+    assert len(attention) >= 1
+    maint_items = [a for a in attention if a["type"] == "maintenance" and a["reason"] == "overdue"]
+    assert len(maint_items) >= 1
+    assert maint_items[0]["summary"] == "PAPI bulb out"
+
+
+def test_overview_not_public(ops_client):
+    """Overview must require auth — unauthenticated access returns 401."""
+    res = ops_client.get("/api/ops/overview")
+    assert res.status_code == 401
+
+
+def test_overview_x_admin_token(ops_client):
+    with mock.patch("app.core.config.settings.ADMIN_API_TOKEN", "test-secret"):
+        res = ops_client.get(
+            "/api/ops/overview",
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert res.status_code == 200
+
+
+# ---------------------------------------------------------------------------
 # Shift Handoff endpoints
 # ---------------------------------------------------------------------------
 

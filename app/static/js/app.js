@@ -1431,7 +1431,7 @@ async function handleOpsRoute(subpage, content) {
     } else if (subpage === 'maintenance') {
         await renderOpsMaintenance(content);
     } else {
-        renderOpsHome(content);
+        await renderOpsHome(content);
     }
 }
 
@@ -1488,15 +1488,16 @@ function renderOpsLogin(container, redirect) {
     userInput.focus();
 }
 
-function renderOpsHome(container) {
+async function renderOpsHome(container) {
     const inputStyle = 'width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;';
+    const tileStyle = 'flex: 1; min-width: 120px; padding: 0.75rem 1rem; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; text-align: center;';
 
     container.innerHTML = `
         <div style="max-width: 1000px; margin: 0 auto;">
             <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                     <h1>Private Ops Mode</h1>
-                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Create and review operational notes for this AirfieldOps instance.</p>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Operational overview for this AirfieldOps instance.</p>
                 </div>
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <button id="ops-admin-settings-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text); font-size: 0.85rem;">Admin Settings</button>
@@ -1524,6 +1525,28 @@ function renderOpsHome(container) {
                 </div>
             </div>
 
+            <h2 style="font-size: 0.95rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 0.75rem 0;">Today's Snapshot</h2>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.75rem;">
+                <div style="${tileStyle}"><div id="tile-log" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Log Entries</div></div>
+                <div style="${tileStyle}"><div id="tile-handoff" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Shift Handoffs</div></div>
+                <div style="${tileStyle}"><div id="tile-inspection" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Inspections</div></div>
+                <div style="${tileStyle}"><div id="tile-open-maint" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Open Maint.</div></div>
+                <div style="${tileStyle}"><div id="tile-in-progress" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">In Progress</div></div>
+                <div style="${tileStyle}"><div id="tile-overdue" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Overdue</div></div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.75rem;">
+                <div class="card">
+                    <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem;">Needs Attention</h3>
+                    <div id="ops-needs-attention" style="color: var(--text-muted); font-size: 0.88rem;">Loading…</div>
+                </div>
+                <div class="card">
+                    <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem;">Recent Activity</h3>
+                    <div id="ops-recent-activity" style="color: var(--text-muted); font-size: 0.88rem;">Loading…</div>
+                </div>
+            </div>
+
+            <h2 style="font-size: 0.95rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 0.75rem 0;">Workflows</h2>
             <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 2rem;">
                 <div class="card" style="cursor: pointer; border: 2px solid var(--accent);" id="ops-card-log">
                     <h3 style="margin: 0 0 0.5rem 0;">Daily Ops Log</h3>
@@ -1620,6 +1643,102 @@ function renderOpsHome(container) {
             btn.innerText = 'Save Changes';
         }
     });
+
+    // Fetch and render overview data
+    const typeBadge = (t) => {
+        const map = {
+            log: 'background: var(--info-bg); color: var(--info-text);',
+            handoff: 'background: var(--chip-bg); color: var(--text);',
+            inspection: 'background: var(--chip-bg); color: var(--text);',
+            maintenance: 'background: var(--chip-bg); color: var(--text);',
+        };
+        const labels = { log: 'Log', handoff: 'Handoff', inspection: 'Inspection', maintenance: 'Maint.' };
+        return `<span class="chip" style="font-size: 0.7rem; border: 1px solid var(--border-color); ${map[t] || ''}">${labels[t] || t}</span>`;
+    };
+
+    const priorityColor = { Low: 'var(--text-muted)', Medium: 'var(--info-text)', High: 'var(--warning-text)', Critical: 'var(--danger)' };
+    const severityColor = { Warning: 'var(--warning-text)', Critical: 'var(--danger)' };
+    const fmtShort = (dt) => dt ? dt.substring(0, 10) : '';
+
+    try {
+        const ov = await api.opsOverview();
+        const t = ov.today;
+
+        document.getElementById('tile-log').innerText = t.ops_log_count;
+        document.getElementById('tile-handoff').innerText = t.handoff_count;
+        document.getElementById('tile-inspection').innerText = t.inspection_count;
+        document.getElementById('tile-open-maint').innerText = t.open_maintenance_count;
+        document.getElementById('tile-in-progress').innerText = t.in_progress_maintenance_count;
+
+        const overdueEl = document.getElementById('tile-overdue');
+        overdueEl.innerText = t.overdue_maintenance_count;
+        if (t.overdue_maintenance_count > 0) {
+            overdueEl.style.color = 'var(--danger)';
+            overdueEl.parentElement.style.borderColor = 'var(--danger)';
+        }
+
+        // Needs Attention
+        const naEl = document.getElementById('ops-needs-attention');
+        if (ov.needs_attention.length === 0) {
+            naEl.innerHTML = '<p style="color: var(--success); margin: 0;">No urgent Ops items.</p>';
+        } else {
+            naEl.innerHTML = ov.needs_attention.map(item => {
+                let detail = '';
+                if (item.type === 'maintenance') {
+                    const c = priorityColor[item.priority] || 'var(--text)';
+                    detail = `<span style="color: ${c}; font-weight: bold;">${utils.escapeHtml(item.priority)}</span> — due ${item.due_date} — ${utils.escapeHtml(item.status)}`;
+                } else {
+                    const c = severityColor[item.severity] || 'var(--warning-text)';
+                    detail = `<span style="color: ${c}; font-weight: bold;">${utils.escapeHtml(item.severity)}</span> — ${fmtShort(item.created_at)}`;
+                }
+                return `<div style="margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.2rem;">
+                        ${typeBadge(item.type)}
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">${item.airport_ident}</span>
+                    </div>
+                    <div style="font-size: 0.88rem; font-weight: bold; margin-bottom: 0.15rem;">${utils.escapeHtml(item.summary.substring(0, 80))}</div>
+                    <div style="font-size: 0.78rem; color: var(--text-muted);">${detail}</div>
+                </div>`;
+            }).join('');
+        }
+
+        // Recent Activity
+        const raEl = document.getElementById('ops-recent-activity');
+        if (ov.recent_activity.length === 0) {
+            raEl.innerHTML = '<p style="color: var(--text-muted); margin: 0;">No recent activity yet.</p>';
+        } else {
+            raEl.innerHTML = ov.recent_activity.map(item => {
+                let meta = '';
+                if (item.type === 'log' && item.meta.severity) {
+                    meta = `<span style="color: ${severityColor[item.meta.severity] || 'var(--text-muted)'}; font-size: 0.75rem;">${item.meta.severity}</span>`;
+                } else if (item.type === 'maintenance' && item.meta.status) {
+                    meta = `<span style="color: var(--text-muted); font-size: 0.75rem;">${item.meta.status}</span>`;
+                }
+                return `<div style="margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border-color);">
+                    <div style="display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.15rem;">
+                        ${typeBadge(item.type)}
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">${item.airport_ident}</span>
+                        <span style="font-size: 0.75rem; color: var(--text-muted); margin-left: auto;">${fmtShort(item.created_at)}</span>
+                    </div>
+                    <div style="font-size: 0.85rem;">${utils.escapeHtml(item.summary.substring(0, 80))}${meta ? ' ' + meta : ''}</div>
+                </div>`;
+            }).join('');
+        }
+    } catch (e) {
+        if (e.status === 401) {
+            renderOpsLogin(container, '');
+            return;
+        }
+        const errHtml = `<p style="color: var(--danger); font-size: 0.85rem; margin: 0;">Failed to load overview.</p>`;
+        const naEl = document.getElementById('ops-needs-attention');
+        const raEl = document.getElementById('ops-recent-activity');
+        if (naEl) naEl.innerHTML = errHtml;
+        if (raEl) raEl.innerHTML = errHtml;
+        ['tile-log','tile-handoff','tile-inspection','tile-open-maint','tile-in-progress','tile-overdue'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerText = '?';
+        });
+    }
 }
 
 async function renderOpsLog(container) {

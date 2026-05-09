@@ -150,10 +150,13 @@ Always serve over HTTPS when publicly exposed. Backup and restore scripts are CL
 
 Ops Mode is a private administrative area for operational records. It is separate from the public read-only dashboard and requires its own login.
 
+Public AirfieldOps pages (weather, runways, hazards, alternates) remain read-only and accessible without Ops login. Ops Mode — including the overview dashboard and all operational records — requires admin authentication.
+
 Navigate to `#/ops` to access Ops Mode.
 
 | Feature | Status |
 |---------|--------|
+| **Overview Dashboard** | Available — private snapshot of today's activity, needs-attention items, and recent records across all Ops workflows |
 | **Daily Ops Log** | Available — record operational events, weather observations, runway status, and shift entries per airport |
 | **Shift Handoff** | Available — structured shift-change notes with weather summary, operations summary, and open items |
 | **Inspection Checklist** | Available — internal field/facility review notes and operational awareness; not a certified inspection compliance system |
@@ -179,7 +182,7 @@ Go to `#/ops` → **Change Credentials** to update username and password. Creden
 |--------|----------|
 | Access control | Username/password login; session token (24 h TTL) |
 | Credential storage | bcrypt hash in `admin_users` SQLite table, inside the Docker volume |
-| Backend protection | All `/api/ops/*` endpoints require a valid session Bearer token or `X-Admin-Token` |
+| Backend protection | All `/api/ops/*` endpoints (including the overview dashboard) require a valid session Bearer token or `X-Admin-Token` |
 | Session storage | Token kept in browser `localStorage` for persistence across tabs and restarts — acceptable for a self-hosted operator machine; do not share the browser profile |
 | Public dashboard | Completely unaffected — read-only behavior is unchanged |
 | Default credentials | `meeks / meeks` on first run only; change immediately |
