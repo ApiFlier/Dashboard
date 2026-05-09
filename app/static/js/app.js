@@ -1489,15 +1489,10 @@ function renderOpsHome(container) {
         <div style="max-width: 1000px; margin: 0 auto;">
             <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
-                    <h1>Ops Mode</h1>
-                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Private operational tracking for this AirfieldOps instance.</p>
+                    <h1>Private Ops Mode</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Create and review operational notes for this AirfieldOps instance.</p>
                 </div>
                 <button id="ops-logout-btn" class="chip" style="border: none; cursor: pointer; background: var(--chip-bg); color: var(--text);">Log Out</button>
-            </div>
-
-            <div class="warning-callout" style="margin-bottom: 1.5rem; border-left-color: var(--accent);">
-                <strong>Private Area</strong>
-                <p style="font-size: 0.85rem; margin-top: 0.25rem;">Ops Mode records are stored locally on this instance only. Not for certified flight dispatch or operational control.</p>
             </div>
 
             <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 2rem;">
@@ -1540,6 +1535,8 @@ function renderOpsHome(container) {
                 <button id="ops-cred-save-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Save Changes</button>
                 <div id="ops-cred-msg" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
             </div>
+
+            <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Ops Mode entries are stored in this instance's runtime database and require admin access. Internal tracking only. Not for certified flight dispatch, release, navigation, inspection compliance, or operational control.</p>
         </div>
     `;
 
@@ -1656,6 +1653,8 @@ async function renderOpsLog(container) {
                     <div class="loading">Loading entries...</div>
                 </div>
             </div>
+
+            <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Ops Mode entries are stored in this instance's runtime database and require admin access. Internal tracking only. Not for certified flight dispatch, release, navigation, inspection compliance, or operational control.</p>
         </div>
     `;
 
