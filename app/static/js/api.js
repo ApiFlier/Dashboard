@@ -155,5 +155,15 @@ const api = {
         if (newUsername) body.new_username = newUsername;
         if (newPassword) body.new_password = newPassword;
         return this._opsPost('/api/ops/auth/change-credentials', body);
+    },
+
+    async opsGetHandoffs(airportIdent, limit = 50) {
+        const params = new URLSearchParams({ limit });
+        if (airportIdent) params.set('airport_ident', airportIdent);
+        return this._opsGet(`/api/ops/handoffs?${params}`);
+    },
+
+    async opsCreateHandoff(entry) {
+        return this._opsPost('/api/ops/handoffs', entry);
     }
 };

@@ -150,11 +150,14 @@ Always serve over HTTPS when publicly exposed. Backup and restore scripts are CL
 
 Ops Mode is a private administrative area for operational records. It is separate from the public read-only dashboard and requires its own login.
 
-**Version 1 includes:**
+Navigate to `#/ops` to access Ops Mode.
 
-- **Daily Ops Log** — record operational events, weather observations, runway status changes, security notes, and more against a specific airport ICAO
-
-Navigate to `#/ops` to access Ops Mode. Future versions will add Shift Handoff, Inspection Checklists, and Maintenance Reminders.
+| Feature | Status |
+|---------|--------|
+| **Daily Ops Log** | Available — record operational events, weather observations, runway status, and shift entries per airport |
+| **Shift Handoff** | Available — structured shift-change notes with weather summary, operations summary, and open items |
+| **Inspection Checklist** | Planned |
+| **Maintenance Reminders** | Planned |
 
 ### Default Admin Login
 

@@ -311,3 +311,195 @@ def test_public_dashboard_still_works(ops_client):
     res = ops_client.get("/api/airport/KAVP/dashboard")
     assert res.status_code != 401
     assert res.status_code != 403
+
+
+# ---------------------------------------------------------------------------
+# Shift Handoff endpoints
+# ---------------------------------------------------------------------------
+
+_HANDOFF_PAYLOAD = {
+    "airport_ident": "KAGC",
+    "shift_name": "Day Shift",
+    "outgoing_operator": "Alice",
+    "incoming_operator": "Bob",
+    "weather_summary": "VFR, winds calm.",
+    "operations_summary": "Routine morning ops.",
+    "open_items": "Check taxiway alpha lights.",
+}
+
+
+def test_get_handoffs_unauthenticated(ops_client):
+    res = ops_client.get("/api/ops/handoffs")
+    assert res.status_code == 401
+
+
+def test_post_handoff_unauthenticated(ops_client):
+    res = ops_client.post("/api/ops/handoffs", json=_HANDOFF_PAYLOAD)
+    assert res.status_code == 401
+
+
+def test_create_handoff_authenticated(ops_client, ops_token):
+    res = ops_client.post(
+        "/api/ops/handoffs",
+        json=_HANDOFF_PAYLOAD,
+        headers=auth_headers(ops_token),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert "id" in data
+    assert data["status"] == "created"
+
+
+def test_get_handoffs_authenticated(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/handoffs", json=_HANDOFF_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/handoffs", headers=headers)
+    assert res.status_code == 200
+    entries = res.json()
+    assert len(entries) >= 1
+    assert entries[0]["shift_name"] == "Day Shift"
+    assert entries[0]["outgoing_operator"] == "Alice"
+
+
+def test_handoff_airport_ident_uppercased(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    payload = {**_HANDOFF_PAYLOAD, "airport_ident": "kagc"}
+    ops_client.post("/api/ops/handoffs", json=payload, headers=headers)
+    res = ops_client.get("/api/ops/handoffs", headers=headers)
+    idents = [e["airport_ident"] for e in res.json()]
+    assert all(i == i.upper() for i in idents)
+
+
+def test_handoff_airport_filter(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/handoffs", json={**_HANDOFF_PAYLOAD, "airport_ident": "KPIT"}, headers=headers)
+    ops_client.post("/api/ops/handoffs", json={**_HANDOFF_PAYLOAD, "airport_ident": "KAVP"}, headers=headers)
+    res = ops_client.get("/api/ops/handoffs?airport_ident=KPIT", headers=headers)
+    assert res.status_code == 200
+    entries = res.json()
+    assert all(e["airport_ident"] == "KPIT" for e in entries)
+    assert len(entries) == 1
+
+
+def test_handoff_required_fields_missing(ops_client, ops_token):
+    """POST without shift_name must be rejected."""
+    headers = auth_headers(ops_token)
+    res = ops_client.post(
+        "/api/ops/handoffs",
+        json={"airport_ident": "KAGC"},
+        headers=headers,
+    )
+    assert res.status_code == 422
+
+
+def test_handoff_x_admin_token(ops_client, ops_token):
+    with mock.patch("app.core.config.settings.ADMIN_API_TOKEN", "test-secret"):
+        res = ops_client.get(
+            "/api/ops/handoffs",
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert res.status_code == 200
+
+
+def test_handoff_created_by_is_authenticated_user(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/handoffs", json=_HANDOFF_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/handoffs", headers=headers)
+    assert res.json()[0]["created_by"] == "meeks"
+
+
+# ---------------------------------------------------------------------------
+# Migration: old Meeks/Meeks default account normalization
+# ---------------------------------------------------------------------------
+
+import sqlite3 as _sqlite3
+from datetime import datetime as _dt, timezone as _tz
+
+
+@pytest.fixture
+def migration_db():
+    """
+    DB pre-seeded with the old Meeks/Meeks default account (simulates an
+    existing Docker volume from before the credential rename).  Settings are
+    patched for the lifetime of each test that uses this fixture.
+    """
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = str(Path(temp_dir) / "migration.sqlite")
+        with mock.patch("app.core.config.settings.STATE_DIR", temp_dir), \
+             mock.patch("app.core.config.settings.DB_PATH", db_path):
+            from app.services.runtime_db import init_runtime_db_if_needed
+            from app.services.ops_auth import hash_password
+            init_runtime_db_if_needed()
+            now = _dt.now(_tz.utc).isoformat()
+            conn = _sqlite3.connect(db_path)
+            conn.execute(
+                "INSERT INTO admin_users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                ("Meeks", hash_password("Meeks"), now, now)
+            )
+            conn.commit()
+            conn.close()
+            yield db_path
+
+
+def test_fresh_db_creates_meeks(migration_db):
+    """Fresh bootstrap (empty admin_users) must create username 'meeks' with password 'meeks'."""
+    # Clear the pre-seeded user so the table is empty, then bootstrap.
+    conn = _sqlite3.connect(migration_db)
+    conn.execute("DELETE FROM admin_users")
+    conn.commit()
+    conn.close()
+    from app.services.ops_auth import bootstrap_default_admin, authenticate_user
+    bootstrap_default_admin()
+    assert authenticate_user("meeks", "meeks") == "meeks"
+
+
+def test_migration_old_default_migrates_to_meeks(migration_db):
+    """Old Meeks/Meeks account (unmodified default) must be migrated to meeks/meeks."""
+    from app.services.ops_auth import bootstrap_default_admin, authenticate_user
+    bootstrap_default_admin()
+    assert authenticate_user("meeks", "meeks") == "meeks"
+
+
+def test_migration_new_password_works_after_migration(migration_db):
+    """meeks/meeks must succeed after migration."""
+    from app.services.ops_auth import bootstrap_default_admin, authenticate_user
+    bootstrap_default_admin()
+    assert authenticate_user("meeks", "meeks") == "meeks"
+
+
+def test_migration_old_password_rejected_after_migration(migration_db):
+    """meeks/Meeks (old capitalised password) must be rejected after migration."""
+    from app.services.ops_auth import bootstrap_default_admin, authenticate_user
+    bootstrap_default_admin()
+    assert authenticate_user("meeks", "Meeks") is None
+
+
+def test_migration_custom_password_not_overwritten(migration_db):
+    """If Meeks has a custom password, bootstrap must not overwrite it."""
+    from app.services.ops_auth import hash_password, bootstrap_default_admin, authenticate_user
+    conn = _sqlite3.connect(migration_db)
+    now = _dt.now(_tz.utc).isoformat()
+    conn.execute(
+        "UPDATE admin_users SET password_hash = ?, updated_at = ? WHERE username = 'Meeks'",
+        (hash_password("customsecret"), now)
+    )
+    conn.commit()
+    conn.close()
+    bootstrap_default_admin()
+    # Custom password must still authenticate (username may be case-folded but not removed)
+    assert authenticate_user("Meeks", "customsecret") is not None
+
+
+def test_migration_custom_username_not_overwritten(migration_db):
+    """If the only admin has a custom username (not Meeks), bootstrap must not touch it."""
+    conn = _sqlite3.connect(migration_db)
+    now = _dt.now(_tz.utc).isoformat()
+    conn.execute(
+        "UPDATE admin_users SET username = 'tower_ops', updated_at = ? WHERE username = 'Meeks'",
+        (now,)
+    )
+    conn.commit()
+    conn.close()
+    from app.services.ops_auth import bootstrap_default_admin, authenticate_user
+    bootstrap_default_admin()
+    assert authenticate_user("tower_ops", "Meeks") is not None

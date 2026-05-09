@@ -1424,6 +1424,8 @@ async function handleOpsRoute(subpage, content) {
 
     if (subpage === 'log') {
         await renderOpsLog(content);
+    } else if (subpage === 'handoff') {
+        await renderOpsHandoff(content);
     } else {
         renderOpsHome(content);
     }
@@ -1483,16 +1485,39 @@ function renderOpsLogin(container, redirect) {
 }
 
 function renderOpsHome(container) {
-    const CATEGORIES = ['General', 'Weather', 'Runway', 'Hazard', 'Maintenance', 'Security', 'Other'];
+    const inputStyle = 'width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;';
 
     container.innerHTML = `
         <div style="max-width: 1000px; margin: 0 auto;">
-            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
                 <div>
                     <h1>Private Ops Mode</h1>
                     <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Create and review operational notes for this AirfieldOps instance.</p>
                 </div>
-                <button id="ops-logout-btn" class="chip" style="border: none; cursor: pointer; background: var(--chip-bg); color: var(--text);">Log Out</button>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <button id="ops-admin-settings-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text); font-size: 0.85rem;">Admin Settings</button>
+                    <button id="ops-logout-btn" class="chip" style="border: none; cursor: pointer; background: var(--chip-bg); color: var(--text);">Log Out</button>
+                </div>
+            </div>
+
+            <div id="ops-admin-panel" style="display: none; margin-bottom: 1.5rem;">
+                <div class="card" style="max-width: 500px;">
+                    <h3 style="margin: 0 0 1rem 0;">Change Credentials</h3>
+                    <div style="margin-bottom: 0.75rem;">
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">New Username <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
+                        <input type="text" id="ops-new-user" autocomplete="off" style="${inputStyle}">
+                    </div>
+                    <div style="margin-bottom: 0.75rem;">
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">New Password <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
+                        <input type="password" id="ops-new-pass" autocomplete="new-password" style="${inputStyle}">
+                    </div>
+                    <div style="margin-bottom: 0.75rem;">
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Current Password <span style="color: var(--danger);">*</span></label>
+                        <input type="password" id="ops-curr-pass" autocomplete="current-password" style="${inputStyle}">
+                    </div>
+                    <button id="ops-cred-save-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.5rem 1.25rem;">Save Changes</button>
+                    <div id="ops-cred-msg" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
+                </div>
             </div>
 
             <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 2rem;">
@@ -1501,10 +1526,10 @@ function renderOpsHome(container) {
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Record operational events, weather notes, runway status, and shift entries.</p>
                     <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
-                <div class="card" style="opacity: 0.6;">
+                <div class="card" style="cursor: pointer; border: 2px solid var(--accent);" id="ops-card-handoff">
                     <h3 style="margin: 0 0 0.5rem 0;">Shift Handoff</h3>
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Structured shift-change summaries and handoff notes.</p>
-                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                    <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
                 <div class="card" style="opacity: 0.6;">
                     <h3 style="margin: 0 0 0.5rem 0;">Inspection Checklist</h3>
@@ -1518,30 +1543,24 @@ function renderOpsHome(container) {
                 </div>
             </div>
 
-            <div class="card" style="max-width: 500px;">
-                <h2>Change Credentials</h2>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">New Username <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
-                    <input type="text" id="ops-new-user" autocomplete="off" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
-                </div>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">New Password <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
-                    <input type="password" id="ops-new-pass" autocomplete="new-password" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
-                </div>
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">Current Password <span style="color: var(--danger);">*</span></label>
-                    <input type="password" id="ops-curr-pass" autocomplete="current-password" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
-                </div>
-                <button id="ops-cred-save-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Save Changes</button>
-                <div id="ops-cred-msg" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
-            </div>
-
             <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Ops Mode entries are stored in this instance's runtime database and require admin access. Internal tracking only. Not for certified flight dispatch, release, navigation, inspection compliance, or operational control.</p>
         </div>
     `;
 
     document.getElementById('ops-card-log').addEventListener('click', () => {
         window.location.hash = '/ops/log';
+    });
+
+    document.getElementById('ops-card-handoff').addEventListener('click', () => {
+        window.location.hash = '/ops/handoff';
+    });
+
+    document.getElementById('ops-admin-settings-btn').addEventListener('click', () => {
+        const panel = document.getElementById('ops-admin-panel');
+        const btn = document.getElementById('ops-admin-settings-btn');
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? 'block' : 'none';
+        btn.innerText = open ? 'Admin Settings ✕' : 'Admin Settings';
     });
 
     document.getElementById('ops-logout-btn').addEventListener('click', () => {
@@ -1760,6 +1779,200 @@ async function renderOpsLog(container) {
         if (e.key === 'Enter') {
             const val = document.getElementById('log-filter-airport').value.trim().toUpperCase();
             loadEntries(val);
+        }
+    });
+}
+
+async function renderOpsHandoff(container) {
+    const inputStyle = 'width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;';
+    const labelStyle = 'display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;';
+
+    container.innerHTML = `
+        <div style="max-width: 1000px; margin: 0 auto;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h1>Shift Handoff</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Create and review shift-change notes for this AirfieldOps instance.</p>
+                </div>
+                <a href="#/ops" class="chip" style="border: 1px solid var(--border-color); text-decoration: none; padding: 0.4rem 1rem; color: var(--text); background: var(--chip-bg);">← Back to Ops</a>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h2 style="margin-bottom: 1rem;">Add Handoff</h2>
+                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div>
+                        <label style="${labelStyle}">Airport ICAO</label>
+                        <input type="text" id="hoff-airport" placeholder="e.g. KAGC" style="${inputStyle} text-transform: uppercase;">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Shift Name</label>
+                        <input type="text" id="hoff-shift" placeholder="e.g. Day Shift" style="${inputStyle}">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Outgoing Operator</label>
+                        <input type="text" id="hoff-outgoing" placeholder="Name" style="${inputStyle}">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Incoming Operator</label>
+                        <input type="text" id="hoff-incoming" placeholder="Name" style="${inputStyle}">
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="${labelStyle}">Weather Summary</label>
+                    <textarea id="hoff-weather" rows="2" placeholder="Current conditions, trends, relevant METARs..." style="${inputStyle} resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="${labelStyle}">Operations Summary</label>
+                    <textarea id="hoff-ops-summary" rows="3" placeholder="What happened this shift, active issues, runway status..." style="${inputStyle} resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="${labelStyle}">Open Items</label>
+                    <textarea id="hoff-open-items" rows="2" placeholder="Follow-up actions, unresolved issues, items for incoming crew..." style="${inputStyle} resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button id="hoff-submit-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Add Handoff</button>
+                    <span id="hoff-submit-msg" style="font-size: 0.9rem;"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <h2 style="margin: 0;">Recent Handoffs</h2>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="hoff-filter-airport" placeholder="Filter by airport..." style="padding: 0.4rem 0.6rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; width: 160px; text-transform: uppercase;">
+                        <button id="hoff-filter-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text);">Filter</button>
+                        <button id="hoff-filter-clear-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text-muted);">Clear</button>
+                    </div>
+                </div>
+                <div id="hoff-entries-container">
+                    <div class="loading">Loading handoffs...</div>
+                </div>
+            </div>
+
+            <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Ops Mode entries are stored in this instance's runtime database and require admin access. Internal tracking only. Not for certified flight dispatch, release, navigation, inspection compliance, or operational control.</p>
+        </div>
+    `;
+
+    const loadHandoffs = async (airportFilter) => {
+        const c = document.getElementById('hoff-entries-container');
+        c.innerHTML = '<div class="loading">Loading...</div>';
+        try {
+            const entries = await api.opsGetHandoffs(airportFilter || '', 50);
+            if (entries.length === 0) {
+                c.innerHTML = `<p style="color: var(--text-muted); padding: 1rem 0;">No handoffs found.</p>`;
+                return;
+            }
+            c.innerHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time (UTC)</th>
+                                <th>Airport</th>
+                                <th>Shift</th>
+                                <th>Outgoing</th>
+                                <th>Incoming</th>
+                                <th>Weather</th>
+                                <th>Operations</th>
+                                <th>Open Items</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${entries.map(e => `
+                                <tr>
+                                    <td style="font-size: 0.8rem; white-space: nowrap;">${new Date(e.created_at).toUTCString().replace(' GMT', 'Z').replace(/ \d{4}/, '').replace(',', '')}</td>
+                                    <td><strong>${e.airport_ident}</strong></td>
+                                    <td>${utils.escapeHtml(e.shift_name)}</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${e.outgoing_operator ? utils.escapeHtml(e.outgoing_operator) : '—'}</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${e.incoming_operator ? utils.escapeHtml(e.incoming_operator) : '—'}</td>
+                                    <td style="max-width: 200px; word-break: break-word; font-size: 0.85rem;">${e.weather_summary ? utils.escapeHtml(e.weather_summary) : '—'}</td>
+                                    <td style="max-width: 250px; word-break: break-word; font-size: 0.85rem;">${e.operations_summary ? utils.escapeHtml(e.operations_summary) : '—'}</td>
+                                    <td style="max-width: 200px; word-break: break-word; font-size: 0.85rem;">${e.open_items ? utils.escapeHtml(e.open_items) : '—'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'handoff');
+                return;
+            }
+            c.innerHTML = `<div class="warning-callout">Failed to load handoffs: ${e.message}</div>`;
+        }
+    };
+
+    await loadHandoffs('');
+
+    document.getElementById('hoff-submit-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('hoff-submit-btn');
+        const msgEl = document.getElementById('hoff-submit-msg');
+        const airport = document.getElementById('hoff-airport').value.trim().toUpperCase();
+        const shift = document.getElementById('hoff-shift').value.trim();
+        const outgoing = document.getElementById('hoff-outgoing').value.trim();
+        const incoming = document.getElementById('hoff-incoming').value.trim();
+        const weather = document.getElementById('hoff-weather').value.trim();
+        const opsSummary = document.getElementById('hoff-ops-summary').value.trim();
+        const openItems = document.getElementById('hoff-open-items').value.trim();
+
+        if (!airport) { msgEl.style.color = 'var(--danger)'; msgEl.innerText = 'Airport ICAO is required.'; return; }
+        if (!shift) { msgEl.style.color = 'var(--danger)'; msgEl.innerText = 'Shift name is required.'; return; }
+
+        btn.disabled = true;
+        btn.innerText = 'Adding...';
+        msgEl.innerText = '';
+
+        try {
+            await api.opsCreateHandoff({
+                airport_ident: airport,
+                shift_name: shift,
+                outgoing_operator: outgoing || null,
+                incoming_operator: incoming || null,
+                weather_summary: weather || null,
+                operations_summary: opsSummary || null,
+                open_items: openItems || null,
+            });
+            msgEl.style.color = 'var(--success)';
+            msgEl.innerText = 'Handoff recorded.';
+            document.getElementById('hoff-airport').value = '';
+            document.getElementById('hoff-shift').value = '';
+            document.getElementById('hoff-outgoing').value = '';
+            document.getElementById('hoff-incoming').value = '';
+            document.getElementById('hoff-weather').value = '';
+            document.getElementById('hoff-ops-summary').value = '';
+            document.getElementById('hoff-open-items').value = '';
+            const currentFilter = document.getElementById('hoff-filter-airport').value.trim().toUpperCase();
+            await loadHandoffs(currentFilter);
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'handoff');
+                return;
+            }
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = e.message || 'Failed to record handoff.';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Add Handoff';
+        }
+    });
+
+    document.getElementById('hoff-filter-btn').addEventListener('click', async () => {
+        const val = document.getElementById('hoff-filter-airport').value.trim().toUpperCase();
+        await loadHandoffs(val);
+    });
+
+    document.getElementById('hoff-filter-clear-btn').addEventListener('click', async () => {
+        document.getElementById('hoff-filter-airport').value = '';
+        await loadHandoffs('');
+    });
+
+    document.getElementById('hoff-filter-airport').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            const val = e.target.value.trim().toUpperCase();
+            await loadHandoffs(val);
         }
     });
 }

@@ -95,17 +95,43 @@ def invalidate_sessions(username: str):
 
 
 def bootstrap_default_admin():
-    """Create the default meeks/meeks admin if no admin users exist yet."""
+    """Create the default meeks/meeks admin if no admin users exist yet.
+
+    Also migrates the old Meeks/Meeks default account (if both username and
+    password are still the original bootstrap values) to meeks/meeks.  Custom
+    credentials — a changed password, a renamed username, or any user other
+    than the exact old default — are never touched.
+    """
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) as cnt FROM admin_users")
         row = cursor.fetchone()
+
         if row["cnt"] == 0:
+            # Fresh install — create the new default.
             now = datetime.now(timezone.utc).isoformat()
-            password_hash = hash_password("meeks")
             conn.execute(
                 "INSERT INTO admin_users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                ("meeks", password_hash, now, now)
+                ("meeks", hash_password("meeks"), now, now)
             )
             conn.commit()
             logger.info("Bootstrapped default Ops Mode admin: meeks")
+            return
+
+        # Existing DB — migrate the old Meeks/Meeks default if still unmodified.
+        cursor.execute(
+            "SELECT username, password_hash FROM admin_users WHERE username = 'Meeks'"
+        )
+        old_row = cursor.fetchone()
+        if old_row and verify_password("Meeks", old_row["password_hash"]):
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                "UPDATE admin_users SET username = 'meeks', password_hash = ?, updated_at = ? WHERE username = 'Meeks'",
+                (hash_password("meeks"), now)
+            )
+            # Keep existing session tokens valid under the new username.
+            conn.execute(
+                "UPDATE admin_sessions SET username = 'meeks' WHERE username = 'Meeks'"
+            )
+            conn.commit()
+            logger.info("Migrated default Ops Mode admin: Meeks/Meeks → meeks/meeks")

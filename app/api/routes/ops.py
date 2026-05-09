@@ -38,6 +38,16 @@ class OpsLogEntryCreate(BaseModel):
     source_context_json: Optional[str] = None
 
 
+class OpsHandoffCreate(BaseModel):
+    airport_ident: str
+    shift_name: str
+    outgoing_operator: Optional[str] = None
+    incoming_operator: Optional[str] = None
+    weather_summary: Optional[str] = None
+    operations_summary: Optional[str] = None
+    open_items: Optional[str] = None
+
+
 # --- Auth dependency ---
 
 async def require_ops_auth(
@@ -160,6 +170,64 @@ async def create_ops_log_entry(
                 entry.entry_text.strip(),
                 entry.created_by.strip() or username,
                 entry.source_context_json,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+    return {"id": row_id, "status": "created"}
+
+
+# --- Ops handoff endpoints ---
+
+@router.get("/ops/handoffs")
+async def get_ops_handoffs(
+    airport_ident: Optional[str] = None,
+    limit: int = 50,
+    username: str = Depends(require_ops_auth),
+):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        if airport_ident:
+            cursor.execute(
+                "SELECT * FROM ops_handoffs WHERE airport_ident = ? ORDER BY created_at DESC LIMIT ?",
+                (airport_ident.upper(), limit),
+            )
+        else:
+            cursor.execute(
+                "SELECT * FROM ops_handoffs ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+@router.post("/ops/handoffs", status_code=201)
+async def create_ops_handoff(
+    entry: OpsHandoffCreate,
+    username: str = Depends(require_ops_auth),
+):
+    if not entry.airport_ident.strip():
+        raise HTTPException(status_code=400, detail="airport_ident cannot be empty.")
+    if not entry.shift_name.strip():
+        raise HTTPException(status_code=400, detail="shift_name cannot be empty.")
+    now = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO ops_handoffs
+               (airport_ident, shift_name, outgoing_operator, incoming_operator,
+                weather_summary, operations_summary, open_items, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry.airport_ident.strip().upper(),
+                entry.shift_name.strip(),
+                entry.outgoing_operator.strip() if entry.outgoing_operator else None,
+                entry.incoming_operator.strip() if entry.incoming_operator else None,
+                entry.weather_summary.strip() if entry.weather_summary else None,
+                entry.operations_summary.strip() if entry.operations_summary else None,
+                entry.open_items.strip() if entry.open_items else None,
+                username,
                 now,
                 now,
             ),
