@@ -619,3 +619,155 @@ def test_inspection_created_by_is_authenticated_user(ops_client, ops_token):
     ops_client.post("/api/ops/inspections", json=_INSPECTION_PAYLOAD, headers=headers)
     res = ops_client.get("/api/ops/inspections", headers=headers)
     assert res.json()[0]["created_by"] == "meeks"
+
+
+# ---------------------------------------------------------------------------
+# Maintenance Reminders tests
+# ---------------------------------------------------------------------------
+
+_MAINTENANCE_PAYLOAD = {
+    "airport_ident": "KAGC",
+    "title": "Check PAPI bulbs on runway 28",
+    "description": "Pilot reported one bulb out during landing.",
+    "priority": "High",
+    "status": "Open",
+    "due_date": "2026-06-01",
+    "assigned_to": "Bob",
+}
+
+
+def test_get_maintenance_unauthenticated(ops_client):
+    res = ops_client.get("/api/ops/maintenance")
+    assert res.status_code == 401
+
+
+def test_post_maintenance_unauthenticated(ops_client):
+    res = ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD)
+    assert res.status_code == 401
+
+
+def test_patch_maintenance_unauthenticated(ops_client):
+    res = ops_client.patch("/api/ops/maintenance/999", json={"status": "Closed"})
+    assert res.status_code == 401
+
+
+def test_create_maintenance_authenticated(ops_client, ops_token):
+    res = ops_client.post(
+        "/api/ops/maintenance",
+        json=_MAINTENANCE_PAYLOAD,
+        headers=auth_headers(ops_token),
+    )
+    assert res.status_code == 201
+    data = res.json()
+    assert "id" in data
+    assert data["status"] == "created"
+
+
+def test_get_maintenance_authenticated(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/maintenance", headers=headers)
+    assert res.status_code == 200
+    items = res.json()
+    assert len(items) >= 1
+    assert items[0]["title"] == "Check PAPI bulbs on runway 28"
+    assert items[0]["priority"] == "High"
+    assert items[0]["assigned_to"] == "Bob"
+
+
+def test_maintenance_airport_ident_uppercased(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    payload = {**_MAINTENANCE_PAYLOAD, "airport_ident": "kagc"}
+    ops_client.post("/api/ops/maintenance", json=payload, headers=headers)
+    res = ops_client.get("/api/ops/maintenance", headers=headers)
+    assert all(i["airport_ident"] == i["airport_ident"].upper() for i in res.json())
+
+
+def test_maintenance_airport_filter(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json={**_MAINTENANCE_PAYLOAD, "airport_ident": "KPIT"}, headers=headers)
+    ops_client.post("/api/ops/maintenance", json={**_MAINTENANCE_PAYLOAD, "airport_ident": "KAVP"}, headers=headers)
+    res = ops_client.get("/api/ops/maintenance?airport_ident=KPIT", headers=headers)
+    assert res.status_code == 200
+    items = res.json()
+    assert all(i["airport_ident"] == "KPIT" for i in items)
+    assert len(items) == 1
+
+
+def test_maintenance_status_filter(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json={**_MAINTENANCE_PAYLOAD, "status": "Open"}, headers=headers)
+    ops_client.post("/api/ops/maintenance", json={**_MAINTENANCE_PAYLOAD, "status": "Closed"}, headers=headers)
+    res = ops_client.get("/api/ops/maintenance?status=Open", headers=headers)
+    assert res.status_code == 200
+    items = res.json()
+    assert all(i["status"] == "Open" for i in items)
+
+
+def test_maintenance_missing_title_rejected(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    bad = {k: v for k, v in _MAINTENANCE_PAYLOAD.items() if k != "title"}
+    res = ops_client.post("/api/ops/maintenance", json=bad, headers=headers)
+    assert res.status_code == 422
+
+
+def test_maintenance_invalid_priority_rejected(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    bad = {**_MAINTENANCE_PAYLOAD, "priority": "Extreme"}
+    res = ops_client.post("/api/ops/maintenance", json=bad, headers=headers)
+    assert res.status_code == 400
+
+
+def test_maintenance_invalid_status_rejected(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    bad = {**_MAINTENANCE_PAYLOAD, "status": "Pending"}
+    res = ops_client.post("/api/ops/maintenance", json=bad, headers=headers)
+    assert res.status_code == 400
+
+
+def test_maintenance_patch_updates_status(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    create_res = ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD, headers=headers)
+    item_id = create_res.json()["id"]
+    patch_res = ops_client.patch(f"/api/ops/maintenance/{item_id}", json={"status": "In Progress"}, headers=headers)
+    assert patch_res.status_code == 200
+    assert patch_res.json()["status"] == "In Progress"
+
+
+def test_maintenance_patch_closed_sets_closed_at(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    create_res = ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD, headers=headers)
+    item_id = create_res.json()["id"]
+    ops_client.patch(f"/api/ops/maintenance/{item_id}", json={"status": "Closed"}, headers=headers)
+    get_res = ops_client.get("/api/ops/maintenance", headers=headers)
+    item = next(i for i in get_res.json() if i["id"] == item_id)
+    assert item["status"] == "Closed"
+    assert item["closed_at"] is not None
+
+
+def test_maintenance_patch_reopen_clears_closed_at(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    create_res = ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD, headers=headers)
+    item_id = create_res.json()["id"]
+    ops_client.patch(f"/api/ops/maintenance/{item_id}", json={"status": "Closed"}, headers=headers)
+    ops_client.patch(f"/api/ops/maintenance/{item_id}", json={"status": "Open"}, headers=headers)
+    get_res = ops_client.get("/api/ops/maintenance", headers=headers)
+    item = next(i for i in get_res.json() if i["id"] == item_id)
+    assert item["status"] == "Open"
+    assert item["closed_at"] is None
+
+
+def test_maintenance_x_admin_token(ops_client, ops_token):
+    with mock.patch("app.core.config.settings.ADMIN_API_TOKEN", "test-secret"):
+        res = ops_client.get(
+            "/api/ops/maintenance",
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert res.status_code == 200
+
+
+def test_maintenance_created_by_is_authenticated_user(ops_client, ops_token):
+    headers = auth_headers(ops_token)
+    ops_client.post("/api/ops/maintenance", json=_MAINTENANCE_PAYLOAD, headers=headers)
+    res = ops_client.get("/api/ops/maintenance", headers=headers)
+    assert res.json()[0]["created_by"] == "meeks"

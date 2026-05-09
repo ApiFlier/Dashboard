@@ -10,7 +10,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 def get_db_path() -> str:
     return settings.DB_PATH
@@ -238,6 +238,30 @@ def run_migrations(conn: sqlite3.Connection):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_inspections_airport ON ops_inspections(airport_ident)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_inspections_created_at ON ops_inspections(created_at)")
         set_schema_version(conn, 7)
+
+    if current_version < 8:
+        logger.info("Running schema migration to version 8")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_maintenance_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                priority TEXT NOT NULL DEFAULT 'Medium',
+                status TEXT NOT NULL DEFAULT 'Open',
+                due_date TEXT,
+                assigned_to TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                closed_at TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_airport ON ops_maintenance_items(airport_ident)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_status ON ops_maintenance_items(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_due_date ON ops_maintenance_items(due_date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_created_at ON ops_maintenance_items(created_at)")
+        set_schema_version(conn, 8)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()

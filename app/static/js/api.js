@@ -175,5 +175,31 @@ const api = {
 
     async opsCreateInspection(entry) {
         return this._opsPost('/api/ops/inspections', entry);
+    },
+
+    async opsGetMaintenance(airportIdent, statusFilter, limit = 100) {
+        const params = new URLSearchParams({ limit });
+        if (airportIdent) params.set('airport_ident', airportIdent);
+        if (statusFilter) params.set('status', statusFilter);
+        return this._opsGet(`/api/ops/maintenance?${params}`);
+    },
+
+    async opsCreateMaintenance(entry) {
+        return this._opsPost('/api/ops/maintenance', entry);
+    },
+
+    async opsUpdateMaintenance(id, update) {
+        const res = await fetch(`/api/ops/maintenance/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json', ...this._opsHeaders() },
+            body: JSON.stringify(update),
+        });
+        if (!res.ok) {
+            const err = new Error(`Request failed for /api/ops/maintenance/${id}`);
+            err.status = res.status;
+            try { const d = await res.json(); err.message = d.detail || `HTTP ${res.status}`; } catch (e) { err.message = `HTTP ${res.status}`; }
+            throw err;
+        }
+        return res.json();
     }
 };

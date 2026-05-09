@@ -1428,6 +1428,8 @@ async function handleOpsRoute(subpage, content) {
         await renderOpsHandoff(content);
     } else if (subpage === 'inspection') {
         await renderOpsInspection(content);
+    } else if (subpage === 'maintenance') {
+        await renderOpsMaintenance(content);
     } else {
         renderOpsHome(content);
     }
@@ -1538,10 +1540,10 @@ function renderOpsHome(container) {
                     <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Field/facility inspection notes and operational awareness records.</p>
                     <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
-                <div class="card" style="opacity: 0.6;">
+                <div class="card" style="cursor: pointer; border: 2px solid var(--accent);" id="ops-card-maintenance">
                     <h3 style="margin: 0 0 0.5rem 0;">Maintenance Reminders</h3>
-                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Schedule and track recurring maintenance tasks.</p>
-                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Track internal maintenance follow-up items and reminders.</p>
+                    <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
                 </div>
             </div>
 
@@ -1559,6 +1561,10 @@ function renderOpsHome(container) {
 
     document.getElementById('ops-card-inspection').addEventListener('click', () => {
         window.location.hash = '/ops/inspection';
+    });
+
+    document.getElementById('ops-card-maintenance').addEventListener('click', () => {
+        window.location.hash = '/ops/maintenance';
     });
 
     document.getElementById('ops-admin-settings-btn').addEventListener('click', () => {
@@ -2193,6 +2199,277 @@ async function renderOpsInspection(container) {
         if (e.key === 'Enter') {
             const val = e.target.value.trim().toUpperCase();
             await loadInspections(val);
+        }
+    });
+}
+
+async function renderOpsMaintenance(container) {
+    const PRIORITIES = ['Low', 'Medium', 'High', 'Critical'];
+    const STATUSES = ['Open', 'In Progress', 'Closed'];
+    const inputStyle = 'width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;';
+    const labelStyle = 'display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;';
+
+    const priorityChip = (p) => {
+        const styles = {
+            Low: 'background: var(--chip-bg); color: var(--text-muted); border: 1px solid var(--border-color);',
+            Medium: 'background: var(--info-bg); color: var(--info-text); border: none;',
+            High: 'background: var(--warning-bg); color: var(--warning-text); border: none;',
+            Critical: 'background: var(--danger-bg); color: var(--danger-text); border: none;',
+        };
+        return `<span class="chip" style="font-size: 0.75rem; ${styles[p] || ''}">${p}</span>`;
+    };
+
+    const statusChip = (s) => {
+        const styles = {
+            Open: 'background: var(--info-bg); color: var(--info-text); border: none;',
+            'In Progress': 'background: var(--warning-bg); color: var(--warning-text); border: none;',
+            Closed: 'background: var(--success-bg); color: var(--success-text); border: none;',
+        };
+        return `<span class="chip" style="font-size: 0.75rem; ${styles[s] || ''}">${s}</span>`;
+    };
+
+    const fmtDate = (d) => d ? d.substring(0, 10) : '—';
+    const isOverdue = (item) => {
+        if (!item.due_date || item.status === 'Closed') return false;
+        return item.due_date < new Date().toISOString().substring(0, 10);
+    };
+
+    container.innerHTML = `
+        <div style="max-width: 1000px; margin: 0 auto;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h1>Maintenance Reminders</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Track internal maintenance reminders and follow-up items for this AirfieldOps instance.</p>
+                </div>
+                <a href="#/ops" class="chip" style="border: 1px solid var(--border-color); text-decoration: none; padding: 0.4rem 1rem; color: var(--text); background: var(--chip-bg);">← Back to Ops</a>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h2 style="margin-bottom: 1rem;">Add Reminder</h2>
+                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div>
+                        <label style="${labelStyle}">Airport ICAO</label>
+                        <input type="text" id="maint-airport" placeholder="e.g. KAGC" style="${inputStyle} text-transform: uppercase;">
+                    </div>
+                    <div style="grid-column: span 2;">
+                        <label style="${labelStyle}">Title <span style="color: var(--danger);">*</span></label>
+                        <input type="text" id="maint-title" placeholder="Brief description of the reminder" style="${inputStyle}">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Priority</label>
+                        <select id="maint-priority" style="${inputStyle}">
+                            ${PRIORITIES.map(p => `<option${p === 'Medium' ? ' selected' : ''}>${p}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Status</label>
+                        <select id="maint-status" style="${inputStyle}">
+                            ${STATUSES.map(s => `<option>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Due Date</label>
+                        <input type="date" id="maint-due-date" style="${inputStyle}">
+                    </div>
+                    <div>
+                        <label style="${labelStyle}">Assigned To</label>
+                        <input type="text" id="maint-assigned-to" style="${inputStyle}">
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="${labelStyle}">Description</label>
+                    <textarea id="maint-description" rows="2" placeholder="Optional details..." style="${inputStyle} resize: vertical;"></textarea>
+                </div>
+                <button id="maint-add-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.5rem 1.25rem;">Add Reminder</button>
+                <div id="maint-add-msg" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <div style="display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 1rem;">
+                    <div style="flex: 1; min-width: 140px;">
+                        <label style="${labelStyle}">Filter by Airport</label>
+                        <input type="text" id="maint-filter-airport" placeholder="ICAO" style="${inputStyle} text-transform: uppercase;">
+                    </div>
+                    <div style="flex: 1; min-width: 140px;">
+                        <label style="${labelStyle}">Filter by Status</label>
+                        <select id="maint-filter-status" style="${inputStyle}">
+                            <option value="">All</option>
+                            ${STATUSES.map(s => `<option>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <button id="maint-filter-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text); padding: 0.5rem 1rem;">Filter</button>
+                    <button id="maint-filter-clear-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text); padding: 0.5rem 1rem;">Clear</button>
+                </div>
+                <div id="maint-list-container"><p style="color: var(--text-muted);">Loading...</p></div>
+            </div>
+
+            <p style="margin-top: 2rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">Maintenance Reminders supports internal follow-up tracking and awareness only. Not a certified maintenance management or compliance system. Not for certified flight dispatch, inspection compliance, or operational control.</p>
+        </div>
+    `;
+
+    let currentAirport = '';
+    let currentStatus = '';
+
+    const loadMaintenance = async (airport, status) => {
+        const listEl = document.getElementById('maint-list-container');
+        if (!listEl) return;
+        listEl.innerHTML = '<p style="color: var(--text-muted);">Loading...</p>';
+        try {
+            const items = await api.opsGetMaintenance(airport, status);
+            if (items.length === 0) {
+                listEl.innerHTML = '<p style="color: var(--text-muted);">No reminders found.</p>';
+                return;
+            }
+            const active = items.filter(i => i.status !== 'Closed');
+            const closed = items.filter(i => i.status === 'Closed').slice(0, 10);
+
+            const renderTable = (rows, title) => {
+                if (rows.length === 0) return '';
+                const rowHtml = rows.map(item => {
+                    const overdue = isOverdue(item);
+                    const dueCss = overdue ? 'color: var(--danger); font-weight: bold;' : '';
+                    let actionBtns = '';
+                    if (item.status !== 'Open') {
+                        actionBtns += `<button class="chip maint-action-btn" data-id="${item.id}" data-action="Open" style="border: 1px solid var(--border-color); cursor: pointer; font-size: 0.72rem; padding: 0.2rem 0.5rem; background: var(--chip-bg); color: var(--text); margin-right: 0.25rem;">Open</button>`;
+                    }
+                    if (item.status !== 'In Progress') {
+                        actionBtns += `<button class="chip maint-action-btn" data-id="${item.id}" data-action="In Progress" style="border: 1px solid var(--border-color); cursor: pointer; font-size: 0.72rem; padding: 0.2rem 0.5rem; background: var(--chip-bg); color: var(--text); margin-right: 0.25rem;">In Progress</button>`;
+                    }
+                    if (item.status !== 'Closed') {
+                        actionBtns += `<button class="chip maint-action-btn" data-id="${item.id}" data-action="Closed" style="border: 1px solid var(--border-color); cursor: pointer; font-size: 0.72rem; padding: 0.2rem 0.5rem; background: var(--chip-bg); color: var(--text);">Close</button>`;
+                    } else {
+                        actionBtns += `<button class="chip maint-action-btn" data-id="${item.id}" data-action="Open" style="border: 1px solid var(--border-color); cursor: pointer; font-size: 0.72rem; padding: 0.2rem 0.5rem; background: var(--chip-bg); color: var(--text);">Reopen</button>`;
+                    }
+                    return `<tr>
+                        <td style="font-weight: bold;">${utils.escapeHtml(item.title)}</td>
+                        <td>${item.airport_ident}</td>
+                        <td>${priorityChip(item.priority)}</td>
+                        <td>${statusChip(item.status)}</td>
+                        <td style="${dueCss}">${fmtDate(item.due_date)}${overdue ? ' ⚠' : ''}</td>
+                        <td>${item.assigned_to ? utils.escapeHtml(item.assigned_to) : '—'}</td>
+                        <td style="white-space: nowrap;">${actionBtns}</td>
+                    </tr>`;
+                }).join('');
+                return `
+                    <h3 style="margin: 1rem 0 0.5rem 0; font-size: 1rem;">${title}</h3>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.88rem;">
+                            <thead><tr style="border-bottom: 2px solid var(--border-color);">
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Title</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Airport</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Priority</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Status</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Due</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Assigned</th>
+                                <th style="text-align:left;padding:0.4rem 0.5rem;">Actions</th>
+                            </tr></thead>
+                            <tbody>${rowHtml}</tbody>
+                        </table>
+                    </div>`;
+            };
+
+            let html = '';
+            if (active.length > 0) html += renderTable(active, 'Open & In Progress');
+            if (closed.length > 0) html += renderTable(closed, 'Recently Closed');
+            listEl.innerHTML = html || '<p style="color: var(--text-muted);">No reminders found.</p>';
+
+            listEl.querySelectorAll('.maint-action-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const id = parseInt(btn.dataset.id);
+                    const newStatus = btn.dataset.action;
+                    btn.disabled = true;
+                    try {
+                        await api.opsUpdateMaintenance(id, { status: newStatus });
+                        await loadMaintenance(currentAirport, currentStatus);
+                    } catch (e) {
+                        btn.disabled = false;
+                        alert(e.message || 'Failed to update reminder.');
+                    }
+                });
+            });
+        } catch (e) {
+            if (e.status === 401) {
+                renderOpsLogin(container, 'maintenance');
+            } else {
+                listEl.innerHTML = `<p style="color: var(--danger);">Failed to load reminders: ${e.message || 'Unknown error'}</p>`;
+            }
+        }
+    };
+
+    await loadMaintenance('', '');
+
+    document.getElementById('maint-add-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('maint-add-btn');
+        const msgEl = document.getElementById('maint-add-msg');
+        const airport = document.getElementById('maint-airport').value.trim().toUpperCase();
+        const title = document.getElementById('maint-title').value.trim();
+        const priority = document.getElementById('maint-priority').value;
+        const status = document.getElementById('maint-status').value;
+        const dueDate = document.getElementById('maint-due-date').value;
+        const assignedTo = document.getElementById('maint-assigned-to').value.trim();
+        const description = document.getElementById('maint-description').value.trim();
+
+        msgEl.innerText = '';
+        if (!title) {
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = 'Title is required.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'Adding...';
+        try {
+            await api.opsCreateMaintenance({
+                airport_ident: airport,
+                title,
+                description: description || null,
+                priority,
+                status,
+                due_date: dueDate || null,
+                assigned_to: assignedTo || null,
+            });
+            document.getElementById('maint-airport').value = '';
+            document.getElementById('maint-title').value = '';
+            document.getElementById('maint-priority').value = 'Medium';
+            document.getElementById('maint-status').value = 'Open';
+            document.getElementById('maint-due-date').value = '';
+            document.getElementById('maint-assigned-to').value = '';
+            document.getElementById('maint-description').value = '';
+            msgEl.style.color = 'var(--success)';
+            msgEl.innerText = 'Reminder added.';
+            await loadMaintenance(currentAirport, currentStatus);
+        } catch (e) {
+            if (e.status === 401) {
+                renderOpsLogin(container, 'maintenance');
+            } else {
+                msgEl.style.color = 'var(--danger)';
+                msgEl.innerText = e.message || 'Failed to add reminder.';
+            }
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Add Reminder';
+        }
+    });
+
+    document.getElementById('maint-filter-btn').addEventListener('click', async () => {
+        currentAirport = document.getElementById('maint-filter-airport').value.trim().toUpperCase();
+        currentStatus = document.getElementById('maint-filter-status').value;
+        await loadMaintenance(currentAirport, currentStatus);
+    });
+
+    document.getElementById('maint-filter-clear-btn').addEventListener('click', async () => {
+        document.getElementById('maint-filter-airport').value = '';
+        document.getElementById('maint-filter-status').value = '';
+        currentAirport = '';
+        currentStatus = '';
+        await loadMaintenance('', '');
+    });
+
+    document.getElementById('maint-filter-airport').addEventListener('keypress', async (e) => {
+        if (e.key === 'Enter') {
+            currentAirport = e.target.value.trim().toUpperCase();
+            currentStatus = document.getElementById('maint-filter-status').value;
+            await loadMaintenance(currentAirport, currentStatus);
         }
     });
 }

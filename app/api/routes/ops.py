@@ -57,6 +57,29 @@ class OpsInspectionCreate(BaseModel):
     notes: Optional[str] = None
 
 
+_VALID_PRIORITIES = {"Low", "Medium", "High", "Critical"}
+_VALID_STATUSES = {"Open", "In Progress", "Closed"}
+
+
+class MaintenanceItemCreate(BaseModel):
+    airport_ident: str
+    title: str
+    description: Optional[str] = None
+    priority: str = "Medium"
+    status: str = "Open"
+    due_date: Optional[str] = None
+    assigned_to: Optional[str] = None
+
+
+class MaintenanceItemUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    status: Optional[str] = None
+    due_date: Optional[str] = None
+    assigned_to: Optional[str] = None
+
+
 # --- Auth dependency ---
 
 async def require_ops_auth(
@@ -304,3 +327,145 @@ async def create_ops_inspection(
         conn.commit()
         row_id = cursor.lastrowid
     return {"id": row_id, "status": "created"}
+
+
+# --- Ops maintenance endpoints ---
+
+@router.get("/ops/maintenance")
+async def get_ops_maintenance(
+    airport_ident: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    username: str = Depends(require_ops_auth),
+):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        conditions = []
+        params: List = []
+        if airport_ident:
+            conditions.append("airport_ident = ?")
+            params.append(airport_ident.upper())
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        # Open/In Progress first (Closed last), then due_date ASC (NULLs last), then newest first
+        order = (
+            "ORDER BY CASE status WHEN 'Closed' THEN 1 ELSE 0 END ASC, "
+            "CASE WHEN due_date IS NULL OR due_date = '' THEN 1 ELSE 0 END ASC, "
+            "due_date ASC, created_at DESC"
+        )
+        params.append(limit)
+        cursor.execute(
+            f"SELECT * FROM ops_maintenance_items {where} {order} LIMIT ?",
+            params,
+        )
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+@router.post("/ops/maintenance", status_code=201)
+async def create_ops_maintenance(
+    entry: MaintenanceItemCreate,
+    username: str = Depends(require_ops_auth),
+):
+    if not entry.airport_ident.strip():
+        raise HTTPException(status_code=400, detail="airport_ident cannot be empty.")
+    if not entry.title.strip():
+        raise HTTPException(status_code=400, detail="title cannot be empty.")
+    if entry.priority not in _VALID_PRIORITIES:
+        raise HTTPException(status_code=400, detail=f"priority must be one of: {', '.join(sorted(_VALID_PRIORITIES))}")
+    if entry.status not in _VALID_STATUSES:
+        raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}")
+    now = datetime.now(timezone.utc).isoformat()
+    closed_at = now if entry.status == "Closed" else None
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO ops_maintenance_items
+               (airport_ident, title, description, priority, status, due_date,
+                assigned_to, created_by, created_at, updated_at, closed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry.airport_ident.strip().upper(),
+                entry.title.strip(),
+                entry.description.strip() if entry.description else None,
+                entry.priority,
+                entry.status,
+                entry.due_date.strip() if entry.due_date else None,
+                entry.assigned_to.strip() if entry.assigned_to else None,
+                username,
+                now,
+                now,
+                closed_at,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+    return {"id": row_id, "status": "created"}
+
+
+@router.patch("/ops/maintenance/{item_id}")
+async def update_ops_maintenance(
+    item_id: int,
+    update: MaintenanceItemUpdate,
+    username: str = Depends(require_ops_auth),
+):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ops_maintenance_items WHERE id = ?", (item_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Maintenance item not found.")
+
+        fields: dict = dict(row)
+        if update.title is not None:
+            if not update.title.strip():
+                raise HTTPException(status_code=400, detail="title cannot be empty.")
+            fields["title"] = update.title.strip()
+        if update.description is not None:
+            fields["description"] = update.description.strip() or None
+        if update.priority is not None:
+            if update.priority not in _VALID_PRIORITIES:
+                raise HTTPException(status_code=400, detail=f"priority must be one of: {', '.join(sorted(_VALID_PRIORITIES))}")
+            fields["priority"] = update.priority
+        if update.status is not None:
+            if update.status not in _VALID_STATUSES:
+                raise HTTPException(status_code=400, detail=f"status must be one of: {', '.join(sorted(_VALID_STATUSES))}")
+            prev_status = fields["status"]
+            fields["status"] = update.status
+            now_ts = datetime.now(timezone.utc).isoformat()
+            if update.status == "Closed" and prev_status != "Closed":
+                fields["closed_at"] = now_ts
+            elif update.status != "Closed" and prev_status == "Closed":
+                fields["closed_at"] = None
+        if update.due_date is not None:
+            fields["due_date"] = update.due_date.strip() or None
+        if update.assigned_to is not None:
+            fields["assigned_to"] = update.assigned_to.strip() or None
+
+        now_ts = datetime.now(timezone.utc).isoformat()
+        fields["updated_at"] = now_ts
+
+        conn.execute(
+            """UPDATE ops_maintenance_items
+               SET title=?, description=?, priority=?, status=?, due_date=?,
+                   assigned_to=?, updated_at=?, closed_at=?
+               WHERE id=?""",
+            (
+                fields["title"],
+                fields["description"],
+                fields["priority"],
+                fields["status"],
+                fields["due_date"],
+                fields["assigned_to"],
+                fields["updated_at"],
+                fields["closed_at"],
+                item_id,
+            ),
+        )
+        conn.commit()
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ops_maintenance_items WHERE id = ?", (item_id,))
+        return dict(cursor.fetchone())

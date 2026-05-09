@@ -157,7 +157,7 @@ Navigate to `#/ops` to access Ops Mode.
 | **Daily Ops Log** | Available — record operational events, weather observations, runway status, and shift entries per airport |
 | **Shift Handoff** | Available — structured shift-change notes with weather summary, operations summary, and open items |
 | **Inspection Checklist** | Available — internal field/facility review notes and operational awareness; not a certified inspection compliance system |
-| **Maintenance Reminders** | Planned |
+| **Maintenance Reminders** | Available — internal follow-up tracking and awareness; not a certified maintenance management or compliance system |
 
 ### Default Admin Login
 
