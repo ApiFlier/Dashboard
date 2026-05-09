@@ -43,6 +43,18 @@ set -a
 source .env
 set +a
 
+# Stop and remove any existing AirfieldOps containers BEFORE the port check so
+# the port they were holding is free when we test availability below.
+# Volumes are never touched — only the container process is replaced.
+for _cname in airfieldops_prod airfieldops airfieldops-app; do
+    if docker ps -a --format '{{.Names}}' | grep -q "^${_cname}$"; then
+        echo "Removing existing container '${_cname}' (volume state preserved)..."
+        docker stop "${_cname}" 2>/dev/null || true
+        docker rm "${_cname}" 2>/dev/null || true
+    fi
+done
+
+# Prefer the port already in .env; only move if something else is using it.
 PORT=${APP_PORT:-8080}
 echo "Checking if port $PORT is available..."
 # /dev/tcp doesn't always work in all bash versions or environments, using a simple python check or nc if available.
@@ -70,17 +82,6 @@ mkdir -p backups
 
 echo "Ensuring Docker named volume 'airfieldops_state' exists..."
 docker volume create airfieldops_state >/dev/null
-
-# Remove any existing AirfieldOps containers before starting.
-# This prevents Docker name conflicts on re-runs and migrates from legacy names.
-# Volumes are never touched — only the container process is replaced.
-for _cname in airfieldops_prod airfieldops airfieldops-app; do
-    if docker ps -a --format '{{.Names}}' | grep -q "^${_cname}$"; then
-        echo "Removing existing container '${_cname}' (volume state preserved)..."
-        docker stop "${_cname}" 2>/dev/null || true
-        docker rm "${_cname}" 2>/dev/null || true
-    fi
-done
 
 echo "Starting application in production mode..."
 $DOCKER_COMPOSE_CMD -f deploy/docker-compose.prod.yml up --build -d
