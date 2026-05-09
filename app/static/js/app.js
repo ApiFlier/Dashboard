@@ -242,7 +242,9 @@ function parseRoute(hash) {
     else if (parts[0] === 'settings') res = { type: 'settings' };
     else if (parts[0] === 'about') res = { type: 'about' };
     else if (parts[0] === 'search') res = { type: 'search' };
-    else if (parts[0] === 'airport' && parts[1]) {
+    else if (parts[0] === 'ops') {
+        res = { type: 'ops', subpage: parts[1] || 'home' };
+    } else if (parts[0] === 'airport' && parts[1]) {
         res = {
             type: 'airport',
             icao: parts[1].toUpperCase(),
@@ -261,7 +263,7 @@ function updateNavLinks(route) {
     // Always show nav if an airport is specified or if default_airport is set
     const targetIcao = route.icao || currentIcao || settings.default_airport;
     
-    if (!targetIcao && route.type !== 'board' && route.type !== 'settings' && route.type !== 'about') {
+    if (!targetIcao && route.type !== 'board' && route.type !== 'settings' && route.type !== 'about' && route.type !== 'ops') {
         nav.style.display = 'none';
         return;
     }
@@ -276,7 +278,8 @@ function updateNavLinks(route) {
         'nav-runways': `#/airport/${targetIcao}/runways`,
         'nav-alternates': `#/airport/${targetIcao}/alternates`,
         'nav-hazards': `#/airport/${targetIcao}/hazards`,
-        'nav-settings': `#/settings`
+        'nav-settings': `#/settings`,
+        'nav-ops': `#/ops`
     };
 
     // Remove active class from all first
@@ -291,6 +294,8 @@ function updateNavLinks(route) {
             if (route.type === 'board' && id === 'nav-board') {
                 el.classList.add('active');
             } else if (route.type === 'settings' && id === 'nav-settings') {
+                el.classList.add('active');
+            } else if (route.type === 'ops' && id === 'nav-ops') {
                 el.classList.add('active');
             } else if (route.type === 'airport' && route.icao === targetIcao) {
                 if (route.view === 'dashboard' && id === 'nav-home') {
@@ -354,6 +359,12 @@ async function handleRoute() {
     if (route.type === 'about') {
         statusBar.style.display = 'none';
         renderAboutPage(content);
+        return;
+    }
+
+    if (route.type === 'ops') {
+        statusBar.style.display = 'none';
+        await handleOpsRoute(route.subpage, content);
         return;
     }
 
@@ -1386,4 +1397,364 @@ async function renderSettings(content) {
     }
 
     setupAutocomplete(document.getElementById('set-default-apt'));
+}
+
+// ============================================================
+// OPS MODE
+// ============================================================
+
+async function handleOpsRoute(subpage, content) {
+    const token = localStorage.getItem('ops_session_token');
+
+    if (!token) {
+        renderOpsLogin(content, subpage === 'home' ? '' : subpage);
+        return;
+    }
+
+    // Verify token is still valid before rendering protected pages
+    try {
+        await api.opsStatus();
+    } catch (e) {
+        if (e.status === 401) {
+            localStorage.removeItem('ops_session_token');
+            renderOpsLogin(content, subpage === 'home' ? '' : subpage);
+            return;
+        }
+    }
+
+    if (subpage === 'log') {
+        await renderOpsLog(content);
+    } else {
+        renderOpsHome(content);
+    }
+}
+
+function renderOpsLogin(container, redirect) {
+    container.innerHTML = `
+        <div style="max-width: 420px; margin: 4rem auto; padding: 0 1rem;">
+            <div class="card">
+                <h1 style="margin-bottom: 0.25rem;">Ops Mode</h1>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.5rem;">Private operational tracking for this AirfieldOps instance.</p>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">Username</label>
+                    <input type="text" id="ops-login-user" autocomplete="username" style="width: 100%; padding: 0.6rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">Password</label>
+                    <input type="password" id="ops-login-pass" autocomplete="current-password" style="width: 100%; padding: 0.6rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <button id="ops-login-btn" class="chip info" style="width: 100%; padding: 0.75rem; border: none; cursor: pointer; font-size: 1rem;">Log In</button>
+                <div id="ops-login-error" style="display: none; margin-top: 1rem; padding: 0.6rem; background: var(--danger-bg); color: var(--danger-text); border: 1px solid var(--danger-border); border-radius: 4px; font-size: 0.9rem;"></div>
+            </div>
+        </div>
+    `;
+
+    const userInput = document.getElementById('ops-login-user');
+    const passInput = document.getElementById('ops-login-pass');
+    const btn = document.getElementById('ops-login-btn');
+    const errEl = document.getElementById('ops-login-error');
+
+    const doLogin = async () => {
+        errEl.style.display = 'none';
+        btn.disabled = true;
+        btn.innerText = 'Logging in...';
+        try {
+            const res = await api.opsLogin(userInput.value.trim(), passInput.value);
+            localStorage.setItem('ops_session_token', res.token);
+            window.location.hash = redirect ? `/ops/${redirect}` : '/ops';
+        } catch (e) {
+            errEl.innerText = e.message || 'Login failed.';
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerText = 'Log In';
+        }
+    };
+
+    btn.addEventListener('click', doLogin);
+    passInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') doLogin(); });
+    userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') passInput.focus(); });
+    userInput.focus();
+}
+
+function renderOpsHome(container) {
+    const CATEGORIES = ['General', 'Weather', 'Runway', 'Hazard', 'Maintenance', 'Security', 'Other'];
+
+    container.innerHTML = `
+        <div style="max-width: 1000px; margin: 0 auto;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>Ops Mode</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Private operational tracking for this AirfieldOps instance.</p>
+                </div>
+                <button id="ops-logout-btn" class="chip" style="border: none; cursor: pointer; background: var(--chip-bg); color: var(--text);">Log Out</button>
+            </div>
+
+            <div class="warning-callout" style="margin-bottom: 1.5rem; border-left-color: var(--accent);">
+                <strong>Private Area</strong>
+                <p style="font-size: 0.85rem; margin-top: 0.25rem;">Ops Mode records are stored locally on this instance only. Not for certified flight dispatch or operational control.</p>
+            </div>
+
+            <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); margin-bottom: 2rem;">
+                <div class="card" style="cursor: pointer; border: 2px solid var(--accent);" id="ops-card-log">
+                    <h3 style="margin: 0 0 0.5rem 0;">Daily Ops Log</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Record operational events, weather notes, runway status, and shift entries.</p>
+                    <span class="chip info" style="border: none; font-size: 0.75rem;">Open</span>
+                </div>
+                <div class="card" style="opacity: 0.6;">
+                    <h3 style="margin: 0 0 0.5rem 0;">Shift Handoff</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Structured shift-change summaries and handoff notes.</p>
+                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                </div>
+                <div class="card" style="opacity: 0.6;">
+                    <h3 style="margin: 0 0 0.5rem 0;">Inspection Checklist</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Daily and periodic field inspection records.</p>
+                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                </div>
+                <div class="card" style="opacity: 0.6;">
+                    <h3 style="margin: 0 0 0.5rem 0;">Maintenance Reminders</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 0;">Schedule and track recurring maintenance tasks.</p>
+                    <span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text-muted);">Planned</span>
+                </div>
+            </div>
+
+            <div class="card" style="max-width: 500px;">
+                <h2>Change Credentials</h2>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">New Username <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
+                    <input type="text" id="ops-new-user" autocomplete="off" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">New Password <span style="font-weight: normal; color: var(--text-muted);">(leave blank to keep current)</span></label>
+                    <input type="password" id="ops-new-pass" autocomplete="new-password" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 0.25rem;">Current Password <span style="color: var(--danger);">*</span></label>
+                    <input type="password" id="ops-curr-pass" autocomplete="current-password" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <button id="ops-cred-save-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Save Changes</button>
+                <div id="ops-cred-msg" style="margin-top: 0.75rem; font-size: 0.9rem;"></div>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('ops-card-log').addEventListener('click', () => {
+        window.location.hash = '/ops/log';
+    });
+
+    document.getElementById('ops-logout-btn').addEventListener('click', () => {
+        localStorage.removeItem('ops_session_token');
+        renderOpsLogin(container, '');
+    });
+
+    document.getElementById('ops-cred-save-btn').addEventListener('click', async () => {
+        const newUser = document.getElementById('ops-new-user').value.trim();
+        const newPass = document.getElementById('ops-new-pass').value;
+        const currPass = document.getElementById('ops-curr-pass').value;
+        const msgEl = document.getElementById('ops-cred-msg');
+        const btn = document.getElementById('ops-cred-save-btn');
+
+        if (!currPass) {
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = 'Current password is required.';
+            return;
+        }
+        if (!newUser && !newPass) {
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = 'Enter a new username, a new password, or both.';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerText = 'Saving...';
+        msgEl.innerText = '';
+
+        try {
+            const res = await api.opsChangeCredentials(currPass, newUser || null, newPass || null);
+            if (res.token) {
+                localStorage.setItem('ops_session_token', res.token);
+            }
+            msgEl.style.color = 'var(--success)';
+            msgEl.innerText = 'Credentials updated.';
+            document.getElementById('ops-new-user').value = '';
+            document.getElementById('ops-new-pass').value = '';
+            document.getElementById('ops-curr-pass').value = '';
+        } catch (e) {
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = e.message || 'Failed to update credentials.';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Save Changes';
+        }
+    });
+}
+
+async function renderOpsLog(container) {
+    const CATEGORIES = ['General', 'Weather', 'Runway', 'Hazard', 'Maintenance', 'Security', 'Other'];
+    const SEVERITIES = ['Info', 'Advisory', 'Warning', 'Critical'];
+    const severityColor = { Info: 'info', Advisory: 'info', Warning: 'warning', Critical: 'danger' };
+
+    container.innerHTML = `
+        <div style="max-width: 1000px; margin: 0 auto;">
+            <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+                <div>
+                    <h1>Daily Ops Log</h1>
+                    <p style="color: var(--text-muted); margin: 0; font-size: 0.9rem;">Operational event records for this instance.</p>
+                </div>
+                <a href="#/ops" class="chip" style="border: 1px solid var(--border-color); text-decoration: none; padding: 0.4rem 1rem; color: var(--text); background: var(--chip-bg);">← Back to Ops</a>
+            </div>
+
+            <div class="card" style="margin-bottom: 1.5rem;">
+                <h2 style="margin-bottom: 1rem;">Add Entry</h2>
+                <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Airport ICAO</label>
+                        <input type="text" id="log-airport" placeholder="e.g. KAGC" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box; text-transform: uppercase;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Category</label>
+                        <select id="log-category" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                            ${CATEGORIES.map(c => `<option>${c}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Severity</label>
+                        <select id="log-severity" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                            ${SEVERITIES.map(s => `<option>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Operator</label>
+                        <input type="text" id="log-operator" placeholder="Your name" style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box;">
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: bold; margin-bottom: 0.25rem;">Entry Text</label>
+                    <textarea id="log-text" rows="3" placeholder="Describe the event or observation..." style="width: 100%; padding: 0.5rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; box-sizing: border-box; resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <button id="log-submit-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.6rem 1.5rem;">Add Entry</button>
+                    <span id="log-submit-msg" style="font-size: 0.9rem;"></span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+                    <h2 style="margin: 0;">Recent Entries</h2>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="text" id="log-filter-airport" placeholder="Filter by airport..." style="padding: 0.4rem 0.6rem; background: var(--input-bg); color: var(--input-text); border: 1px solid var(--input-border); border-radius: 4px; width: 160px; text-transform: uppercase;">
+                        <button id="log-filter-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text);">Filter</button>
+                        <button id="log-filter-clear-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text-muted);">Clear</button>
+                    </div>
+                </div>
+                <div id="log-entries-container">
+                    <div class="loading">Loading entries...</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const loadEntries = async (airportFilter) => {
+        const c = document.getElementById('log-entries-container');
+        c.innerHTML = '<div class="loading">Loading...</div>';
+        try {
+            const entries = await api.opsGetLogs(airportFilter || '', 50);
+            if (entries.length === 0) {
+                c.innerHTML = `<p style="color: var(--text-muted); padding: 1rem 0;">No entries found.</p>`;
+                return;
+            }
+            c.innerHTML = `
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Time (UTC)</th>
+                                <th>Airport</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Entry</th>
+                                <th>By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${entries.map(e => `
+                                <tr>
+                                    <td style="font-size: 0.8rem; white-space: nowrap;">${new Date(e.created_at).toUTCString().replace(' GMT', 'Z').replace(/ \d{4}/, '').replace(',', '')}</td>
+                                    <td><strong>${e.airport_ident}</strong></td>
+                                    <td><span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text);">${e.category}</span></td>
+                                    <td><span class="chip ${severityColor[e.severity] || 'info'}" style="border: none; font-size: 0.75rem;">${e.severity}</span></td>
+                                    <td style="max-width: 320px; word-break: break-word;">${utils.escapeHtml(e.entry_text)}</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${e.created_by}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'log');
+                return;
+            }
+            c.innerHTML = `<div class="warning-callout">Failed to load entries: ${e.message}</div>`;
+        }
+    };
+
+    await loadEntries('');
+
+    document.getElementById('log-submit-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('log-submit-btn');
+        const msgEl = document.getElementById('log-submit-msg');
+        const airport = document.getElementById('log-airport').value.trim().toUpperCase();
+        const text = document.getElementById('log-text').value.trim();
+        const category = document.getElementById('log-category').value;
+        const severity = document.getElementById('log-severity').value;
+        const operator = document.getElementById('log-operator').value.trim();
+
+        if (!airport) { msgEl.style.color = 'var(--danger)'; msgEl.innerText = 'Airport ICAO is required.'; return; }
+        if (!text) { msgEl.style.color = 'var(--danger)'; msgEl.innerText = 'Entry text is required.'; return; }
+
+        btn.disabled = true;
+        btn.innerText = 'Adding...';
+        msgEl.innerText = '';
+
+        try {
+            await api.opsCreateLog({ airport_ident: airport, category, severity, entry_text: text, created_by: operator || 'Ops' });
+            document.getElementById('log-text').value = '';
+            document.getElementById('log-airport').value = '';
+            msgEl.style.color = 'var(--success)';
+            msgEl.innerText = 'Entry added.';
+            const filterVal = document.getElementById('log-filter-airport').value.trim().toUpperCase();
+            await loadEntries(filterVal);
+            setTimeout(() => { if (msgEl) msgEl.innerText = ''; }, 3000);
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, 'log');
+                return;
+            }
+            msgEl.style.color = 'var(--danger)';
+            msgEl.innerText = e.message || 'Failed to add entry.';
+        } finally {
+            btn.disabled = false;
+            btn.innerText = 'Add Entry';
+        }
+    });
+
+    document.getElementById('log-filter-btn').addEventListener('click', () => {
+        const val = document.getElementById('log-filter-airport').value.trim().toUpperCase();
+        loadEntries(val);
+    });
+
+    document.getElementById('log-filter-clear-btn').addEventListener('click', () => {
+        document.getElementById('log-filter-airport').value = '';
+        loadEntries('');
+    });
+
+    document.getElementById('log-filter-airport').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const val = document.getElementById('log-filter-airport').value.trim().toUpperCase();
+            loadEntries(val);
+        }
+    });
 }

@@ -136,6 +136,16 @@ const utils = {
         }
     },
 
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    },
+
     renderStatusLabel(status) {
         const labels = {
             'live': { class: 'vfr', text: 'Live' },

@@ -10,7 +10,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 def get_db_path() -> str:
     return settings.DB_PATH
@@ -161,6 +161,43 @@ def run_migrations(conn: sqlite3.Connection):
         except sqlite3.OperationalError as e:
             logger.warning(f"Migration to v4 warning: {e}")
         set_schema_version(conn, 4)
+        current_version = 4
+
+    if current_version < 5:
+        logger.info("Running schema migration to version 5")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_log_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'General',
+                severity TEXT NOT NULL DEFAULT 'Info',
+                entry_text TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                source_context_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_log_airport ON ops_log_entries(airport_ident)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_log_created_at ON ops_log_entries(created_at)")
+        set_schema_version(conn, 5)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()

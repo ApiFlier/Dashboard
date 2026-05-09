@@ -5,3 +5,4 @@ pydantic==2.7.1
 pytest==8.2.0
 pytest-asyncio==0.23.6
 haversine==2.8.1
+bcrypt==4.1.3

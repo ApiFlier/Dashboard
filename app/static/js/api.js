@@ -99,5 +99,61 @@ const api = {
     },
     async searchAirports(q, limit = 10) {
         return this._fetch(`/api/airports/search?q=${q}&limit=${limit}`);
+    },
+
+    _opsHeaders() {
+        const token = localStorage.getItem('ops_session_token');
+        return token ? { 'Authorization': `Bearer ${token}` } : {};
+    },
+
+    async _opsGet(url) {
+        const res = await fetch(url, { headers: this._opsHeaders() });
+        if (!res.ok) {
+            const err = new Error(`Request failed for ${url}`);
+            err.status = res.status;
+            try { const d = await res.json(); err.message = d.detail || `HTTP ${res.status}`; } catch (e) { err.message = `HTTP ${res.status}`; }
+            throw err;
+        }
+        return res.json();
+    },
+
+    async _opsPost(url, body) {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...this._opsHeaders() },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            const err = new Error(`Request failed for ${url}`);
+            err.status = res.status;
+            try { const d = await res.json(); err.message = d.detail || `HTTP ${res.status}`; } catch (e) { err.message = `HTTP ${res.status}`; }
+            throw err;
+        }
+        return res.json();
+    },
+
+    async opsLogin(username, password) {
+        return this._opsPost('/api/ops/auth/login', { username, password });
+    },
+
+    async opsStatus() {
+        return this._opsGet('/api/ops/status');
+    },
+
+    async opsGetLogs(airportIdent, limit = 50) {
+        const params = new URLSearchParams({ limit });
+        if (airportIdent) params.set('airport_ident', airportIdent);
+        return this._opsGet(`/api/ops/logs?${params}`);
+    },
+
+    async opsCreateLog(entry) {
+        return this._opsPost('/api/ops/logs', entry);
+    },
+
+    async opsChangeCredentials(currentPassword, newUsername, newPassword) {
+        const body = { current_password: currentPassword };
+        if (newUsername) body.new_username = newUsername;
+        if (newPassword) body.new_password = newPassword;
+        return this._opsPost('/api/ops/auth/change-credentials', body);
     }
 };

@@ -32,15 +32,17 @@ def test_kjfk_summary_no_error(client):
         {"id": "13R", "heading": 210.6, "length_ft": 14511, "width_ft": 200}
     ]
     mock_dir = {"icao": "KJFK", "name": "John F Kennedy Intl", "lat": 40.6, "lon": -73.7, "frequencies": []}
-    
+
+    # summary_service imports get_airport_directory by name at module load, so
+    # the mock must target summary_service's namespace, not airport_data's.
     with mock.patch("app.api.routes.runways.get_airport_runways", return_value=mock_runways), \
-         mock.patch("app.services.airport_data.get_airport_runways", return_value=mock_runways), \
-         mock.patch("app.services.airport_data.get_airport_directory", return_value=mock_dir), \
+         mock.patch("app.services.summary_service.get_airport_runways", return_value=mock_runways), \
+         mock.patch("app.services.summary_service.get_airport_directory", return_value=mock_dir), \
          mock.patch("app.services.aviationweather_client.aw_client.get_metar", return_value=[]), \
          mock.patch("app.services.aviationweather_client.aw_client.get_metars", return_value=[]), \
          mock.patch("app.services.aviationweather_client.aw_client.get_taf", return_value=[]), \
          mock.patch("app.services.nws_client.nws_client.get_alerts_by_point", return_value=[]):
-        
+
         response = client.get("/api/airports/summary?idents=KJFK")
         assert response.status_code == 200
         data = response.json()
@@ -54,13 +56,13 @@ def test_batch_summary_mixed(client):
     ]
     
     with mock.patch("app.api.routes.runways.get_airport_runways", return_value=mock_runways), \
-         mock.patch("app.services.airport_data.get_airport_runways", return_value=mock_runways), \
+         mock.patch("app.services.summary_service.get_airport_runways", return_value=mock_runways), \
          mock.patch("app.services.aviationweather_client.aw_client.get_metar", return_value=[]), \
          mock.patch("app.services.aviationweather_client.aw_client.get_metars", return_value=[]), \
          mock.patch("app.services.aviationweather_client.aw_client.get_taf", return_value=[]), \
          mock.patch("app.services.nws_client.nws_client.get_alerts_by_point", return_value=[]), \
-         mock.patch("app.services.airport_data.get_airport_directory") as mock_dir:
-        
+         mock.patch("app.services.summary_service.get_airport_directory") as mock_dir:
+
         mock_dir.side_effect = lambda icao: {"icao": icao, "name": f"Name {icao}", "lat": 0, "lon": 0, "frequencies": []}
         
         response = client.get("/api/airports/summary?idents=KAVP,KAGC,KLAX,KJFK")
