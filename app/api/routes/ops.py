@@ -86,7 +86,12 @@ async def require_ops_auth(
     authorization: str = Header(None),
     x_admin_token: str = Header(None),
 ) -> str:
-    """Returns the authenticated username. Accepts session Bearer token or X-Admin-Token."""
+    """Returns the authenticated username. Accepts session Bearer token or X-Admin-Token.
+
+    All /api/ops/* endpoints use this dependency because Ops records are private
+    operational data created by the instance owner.  Unlike public weather/airport
+    data, ops records must never be readable without authentication.
+    """
     if authorization and authorization.startswith("Bearer "):
         token = authorization[len("Bearer "):]
         username = validate_session(token)
@@ -336,6 +341,7 @@ async def get_ops_overview(
     airport_ident: Optional[str] = None,
     username: str = Depends(require_ops_auth),
 ):
+    # Use UTC consistently — created_at values are stored as UTC ISO strings.
     today_str = datetime.now(timezone.utc).date().isoformat()
     ap = airport_ident.upper() if airport_ident else None
     ap_params = [ap] if ap else []
@@ -344,6 +350,8 @@ async def get_ops_overview(
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        # Nested helpers close over `cursor` and `ap` to avoid repeating the
+        # airport-filter branch in every COUNT query.
         def _count_today(table: str) -> int:
             if ap:
                 cursor.execute(

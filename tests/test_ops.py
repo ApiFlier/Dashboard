@@ -49,9 +49,12 @@ def test_ops_tables_exist(ops_client):
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
     tables = {r[0] for r in cursor.fetchall()}
     conn.close()
-    assert "ops_log_entries" in tables
     assert "admin_users" in tables
     assert "admin_sessions" in tables
+    assert "ops_log_entries" in tables
+    assert "ops_handoffs" in tables
+    assert "ops_inspections" in tables
+    assert "ops_maintenance_items" in tables
 
 
 def test_default_admin_bootstrapped(ops_client):

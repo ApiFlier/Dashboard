@@ -1838,7 +1838,7 @@ async function renderOpsLog(container) {
                                     <td><span class="chip" style="border: none; font-size: 0.75rem; background: var(--chip-bg); color: var(--text);">${e.category}</span></td>
                                     <td><span class="chip ${severityColor[e.severity] || 'info'}" style="border: none; font-size: 0.75rem;">${e.severity}</span></td>
                                     <td style="max-width: 320px; word-break: break-word;">${utils.escapeHtml(e.entry_text)}</td>
-                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${e.created_by}</td>
+                                    <td style="font-size: 0.85rem; color: var(--text-muted);">${utils.escapeHtml(e.created_by)}</td>
                                 </tr>
                             `).join('')}
                         </tbody>

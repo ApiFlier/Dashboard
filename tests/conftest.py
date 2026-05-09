@@ -39,6 +39,6 @@ def _session_test_db():
             from app.services.ops_auth import bootstrap_default_admin
 
             init_runtime_db_if_needed()   # runs migrations + seeds reference data
-            bootstrap_default_admin()     # creates default Meeks admin if absent
+            bootstrap_default_admin()     # creates default meeks/meeks admin if absent
 
             yield db_path
