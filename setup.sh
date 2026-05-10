@@ -117,24 +117,18 @@ echo "  without changing the default password."
 echo "========================================"
 echo ""
 
-echo "Delete local source files now? [y/N]"
-echo "(The running app and all Docker volume state are preserved either way.)"
-read -r user_input
-case "${user_input}" in
-    [yY])
-        echo "Removing source files..."
-        find . -mindepth 1 -maxdepth 1 \
-            ! -name '.env' \
-            ! -name 'backups' \
-            ! -name 'backup.sh' \
-            ! -name 'restore.sh' \
-            ! -name 'setup.sh' \
-            -exec rm -rf {} +
-        echo "Source files removed. The app continues running via Docker."
-        ;;
-    *)
-        echo "Source files preserved."
-        ;;
-esac
+# Offer to remove local source files (the running app and volumes are unaffected)
+# printf "Delete local source files now? [y/N] "
+# REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# DEL_CHOICE=""
+# read -r DEL_CHOICE < /dev/tty || true
+# if [ "${DEL_CHOICE}" = "y" ] || [ "${DEL_CHOICE}" = "Y" ]; then
+#     echo "==> Removing local source files..."
+#     cd "$HOME" 2>/dev/null || cd / 2>/dev/null || true
+#     rm -rf "$REPO_DIR"
+#     echo "    Done. The running app and Docker volumes are preserved."
+# else
+    echo "    Source files preserved."
+# fi
 
 echo "Setup complete."
