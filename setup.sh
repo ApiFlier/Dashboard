@@ -118,17 +118,17 @@ echo "========================================"
 echo ""
 
 # Offer to remove local source files (the running app and volumes are unaffected)
-# printf "Delete local source files now? [y/N] "
-# REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# DEL_CHOICE=""
-# read -r DEL_CHOICE < /dev/tty || true
-# if [ "${DEL_CHOICE}" = "y" ] || [ "${DEL_CHOICE}" = "Y" ]; then
-#     echo "==> Removing local source files..."
-#     cd "$HOME" 2>/dev/null || cd / 2>/dev/null || true
-#     rm -rf "$REPO_DIR"
-#     echo "    Done. The running app and Docker volumes are preserved."
-# else
+printf "Delete local source files now? [y/N] "
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEL_CHOICE=""
+read -r DEL_CHOICE < /dev/tty || true
+if [ "${DEL_CHOICE}" = "y" ] || [ "${DEL_CHOICE}" = "Y" ]; then
+    echo "==> Removing local source files..."
+    cd "$HOME" 2>/dev/null || cd / 2>/dev/null || true
+    rm -rf "$REPO_DIR"
+    echo "    Done. The running app and Docker volumes are preserved."
+else
     echo "    Source files preserved."
-# fi
+fi
 
 echo "Setup complete."
