@@ -10,12 +10,12 @@ Select any airport by ICAO code and get a consolidated view of live METARs and T
 
 ## Quick Start
 
-### 1. Install Docker
-
-| Platform | Instructions |
-|----------|-------------|
-| Windows / macOS | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
-| Linux | Install [Docker Engine](https://docs.docker.com/engine/install/) + the [Compose plugin](https://docs.docker.com/compose/install/linux/) |
+#### 1. Install Docker
+**Linux** — [Docker Engine](https://docs.docker.com/engine/install/) + Docker Compose plugin:
+```bash
+# Example for Ubuntu/Debian
+curl -fsSL https://get.docker.com | sudo sh
+```
 
 ### 2. Verify Docker
 
@@ -24,9 +24,9 @@ docker --version
 docker compose version
 ```
 
-Both commands must succeed before continuing.
+Both commands must succeed before proceeding.
 
-### 3. Clone and run
+### 3. Clone, configure, and run
 
 ```bash
 git clone https://github.com/ApiFlier/airfieldops-dashboard.git airfieldops
