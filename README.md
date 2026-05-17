@@ -15,6 +15,8 @@ Select any airport by ICAO code and get a consolidated view of live METARs and T
 ```bash
 # Example for Ubuntu/Debian
 curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
 ### 2. Verify Docker
