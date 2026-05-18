@@ -117,8 +117,13 @@ echo "  without changing the default password."
 echo "========================================"
 echo ""
 
-# Offer to remove local source files (the running app and volumes are unaffected)
-printf "Delete local source files now? [y/N] "
+# Offer to remove local source files (the running app and Docker volumes are unaffected).
+# Default is No — source files are needed to run ./update.sh in the future.
+echo "  You can optionally delete the local source files now."
+echo "  The running app and Docker volumes are preserved either way."
+echo "  Keep the source files if you want to run ./update.sh later."
+echo ""
+printf "Delete local source files? (default: No) [y/N] "
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEL_CHOICE=""
 read -r DEL_CHOICE < /dev/tty || true
@@ -127,8 +132,16 @@ if [ "${DEL_CHOICE}" = "y" ] || [ "${DEL_CHOICE}" = "Y" ]; then
     cd "$HOME" 2>/dev/null || cd / 2>/dev/null || true
     rm -rf "$REPO_DIR"
     echo "    Done. The running app and Docker volumes are preserved."
+    echo "    To update later, re-clone the repo and run ./setup.sh again."
 else
     echo "    Source files preserved."
+    echo ""
+    echo "========================================"
+    echo "  Next steps:"
+    echo "  Run ./menu.sh for status, updates,"
+    echo "  config changes, and troubleshooting."
+    echo "========================================"
 fi
 
+echo ""
 echo "Setup complete."

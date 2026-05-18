@@ -312,20 +312,21 @@ def seed_reference_data_from_json(conn: sqlite3.Connection):
     # 1. Seed Airports (Insert or Update if changed)
     for apt in airports:
         icao = apt["icao"]
-        cursor.execute("SELECT name, lat, lon, elevation_ft FROM airports WHERE ident = ?", (icao,))
+        cursor.execute("SELECT name, lat, lon, elevation_ft, type FROM airports WHERE ident = ?", (icao,))
         existing = cursor.fetchone()
-        
+
         if not existing:
             conn.execute(
-                "INSERT INTO airports (ident, name, lat, lon, elevation_ft, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (icao, apt["name"], apt.get("lat"), apt.get("lon"), apt.get("elevation_ft"), "seed_json", now)
+                "INSERT INTO airports (ident, name, lat, lon, elevation_ft, type, source, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (icao, apt["name"], apt.get("lat"), apt.get("lon"), apt.get("elevation_ft"), apt.get("type"), "seed_json", now)
             )
         else:
-            # Update only if name or location changed significantly
-            if existing["name"] != apt["name"] or abs(existing["lat"] - apt["lat"]) > 0.0001 or abs(existing["lon"] - apt["lon"]) > 0.0001:
+            # Update if name, location, or type changed (also backfills NULL type from older seeds)
+            type_changed = existing["type"] != apt.get("type")
+            if existing["name"] != apt["name"] or abs(existing["lat"] - apt["lat"]) > 0.0001 or abs(existing["lon"] - apt["lon"]) > 0.0001 or type_changed:
                 conn.execute(
-                    "UPDATE airports SET name = ?, lat = ?, lon = ?, elevation_ft = ?, updated_at = ? WHERE ident = ?",
-                    (apt["name"], apt["lat"], apt["lon"], apt.get("elevation_ft"), now, icao)
+                    "UPDATE airports SET name = ?, lat = ?, lon = ?, elevation_ft = ?, type = ?, updated_at = ? WHERE ident = ?",
+                    (apt["name"], apt["lat"], apt["lon"], apt.get("elevation_ft"), apt.get("type"), now, icao)
                 )
 
     # 2. Seed Runways (Clear and re-seed for simplicity as they aren't user-editable)

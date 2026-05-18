@@ -28,12 +28,20 @@ docker compose version
 
 Both commands must succeed before proceeding.
 
-### 3. Clone, configure, and run
+### 3. Clone and run
 
 ```bash
 git clone https://github.com/ApiFlier/airfieldops-dashboard.git airfieldops
 cd airfieldops
-chmod +x setup.sh
+chmod +x menu.sh setup.sh update.sh
+./menu.sh
+```
+
+**`./menu.sh` is the normal entry point.** It provides setup, updates, config, status, and troubleshooting in one place.
+
+To set up for the first time, choose option **1** from the menu, or run `./setup.sh` directly:
+
+```bash
 ./setup.sh
 ```
 
@@ -258,14 +266,36 @@ Handles `.env` creation, port discovery, volume provisioning, image build, and h
 ### Updating a running deployment
 
 ```bash
+./menu.sh   # option 2
+# or directly:
 ./update.sh
 ```
 
-Creates a pre-update backup, rebuilds the image, and restarts the container.
+`update.sh` checks for uncommitted local changes, pulls the latest code (fast-forward only), creates a pre-update backup, rebuilds the image, restarts the container, and waits for the health check. Logs are shown automatically if startup fails.
 
 ### Production decoupling
 
 Once the container is running, it has no dependency on the local source directory. You can delete the source files if desired — the app continues running and restarts on host reboot. To update after deleting source files, re-clone and run `./setup.sh`.
+
+### Troubleshooting
+
+```bash
+./menu.sh   # option 5
+# or directly:
+bash scripts/troubleshoot.sh
+```
+
+The troubleshoot script checks Docker, container status, health endpoint, reference data, and recent logs. It offers to restart or rebuild the container if issues are found (with confirmation; no data is deleted).
+
+### Configuring credentials and optional settings
+
+```bash
+./menu.sh   # option 3
+# or directly:
+bash scripts/configure-credentials.sh
+```
+
+No secrets are printed. Only `[set]` / `[not set]` status is shown.
 
 ### Development mode
 
