@@ -2,6 +2,8 @@
 Tests for Ops Mode v1: schema, auth, and ops log endpoints.
 """
 import tempfile
+from datetime import datetime, timezone, timedelta
+
 import pytest
 from pathlib import Path
 from unittest import mock
@@ -35,6 +37,65 @@ def ops_token(ops_client):
 
 def auth_headers(token):
     return {"Authorization": f"Bearer {token}"}
+
+
+def set_ops_profile(username, operator_mode="airport", airport_ident="KPIT", organization_name=None, display_name=None, is_active=1):
+    import sqlite3
+    from app.core.config import settings as cfg
+
+    conn = sqlite3.connect(cfg.DB_PATH)
+    conn.execute(
+        """UPDATE admin_users
+           SET operator_mode = ?, airport_ident = ?, organization_name = ?, display_name = ?, is_active = ?
+           WHERE username = ?""",
+        (operator_mode, airport_ident, organization_name, display_name, is_active, username),
+    )
+    conn.commit()
+    conn.close()
+
+
+def create_ops_user(username, password="secret", operator_mode="airline", airport_ident="KPIT", organization_name=None, display_name=None):
+    import sqlite3
+    from app.core.config import settings as cfg
+    from app.services.ops_auth import hash_password
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(cfg.DB_PATH)
+    conn.execute(
+        """INSERT INTO admin_users
+           (username, password_hash, created_at, updated_at, operator_mode, airport_ident, organization_name, display_name, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+        (username, hash_password(password), now, now, operator_mode, airport_ident, organization_name, display_name),
+    )
+    conn.commit()
+    conn.close()
+
+
+def login_ops_user(client, username, password="secret"):
+    res = client.post("/api/ops/auth/login", json={"username": username, "password": password})
+    assert res.status_code == 200, res.json()
+    return res.json()["token"]
+
+
+def future_utc(hours=4):
+    return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
+
+
+def past_utc(hours=4):
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+
+def shared_alert_payload(airport_ident="KPIT", expires_at=None):
+    return {
+        "airport_ident": airport_ident,
+        "category": "runway",
+        "affected_asset": "Runway 2",
+        "severity": "Watch",
+        "visibility": "shared_airline_station",
+        "title": "Runway 2 lighting inspection pending",
+        "message": "Potential lighting issue reported. Inspection pending. Verify through official channels before operational decisions.",
+        "expires_at": expires_at or future_utc(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +183,192 @@ def test_ops_status_authenticated(ops_client, ops_token):
     data = res.json()
     assert data["status"] == "ok"
     assert data["ops_mode"] == "v1"
+
+
+# ---------------------------------------------------------------------------
+# Shared Airport Alerts: identity, role scoping, active listing, ack
+# ---------------------------------------------------------------------------
+
+def test_v9_migration_creates_shared_alert_columns_and_tables(ops_client):
+    import sqlite3
+    from app.core.config import settings as cfg
+
+    conn = sqlite3.connect(cfg.DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(admin_users)")
+    admin_columns = {row[1] for row in cursor.fetchall()}
+    assert {"operator_mode", "airport_ident", "organization_name", "display_name", "is_active"}.issubset(admin_columns)
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    tables = {row[0] for row in cursor.fetchall()}
+    assert "ops_shared_alerts" in tables
+    assert "ops_shared_alert_acknowledgements" in tables
+
+    cursor.execute("SELECT value FROM schema_meta WHERE key = 'version'")
+    assert cursor.fetchone()[0] == "9"
+    conn.close()
+
+
+def test_ops_me_returns_profile_fields(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT", organization_name="Airport Ops", display_name="PIT Ops")
+    res = ops_client.get("/api/ops/me", headers=auth_headers(ops_token))
+    assert res.status_code == 200
+    data = res.json()
+    assert data["username"] == "meeks"
+    assert data["operator_mode"] == "airport"
+    assert data["airport_ident"] == "KPIT"
+    assert data["organization_name"] == "Airport Ops"
+    assert data["display_name"] == "PIT Ops"
+    assert data["is_active"] is True
+
+
+def test_airport_mode_user_can_create_alert_for_own_airport(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT", organization_name="Airport Ops")
+    res = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    assert res.status_code == 201
+    assert res.json()["status"] == "created"
+    assert "advisory coordination notes" in res.json()["advisory"]
+
+
+def test_airline_mode_user_cannot_create_alert(ops_client):
+    create_ops_user("station_pit", operator_mode="airline", airport_ident="KPIT")
+    token = login_ops_user(ops_client, "station_pit")
+    res = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(token))
+    assert res.status_code == 403
+    assert "Only airport operators" in res.json()["detail"]
+
+
+def test_user_cannot_create_alert_for_another_airport(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT")
+    res = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KAVP"), headers=auth_headers(ops_token))
+    assert res.status_code == 403
+
+
+def test_shared_alert_validation_rejects_invalid_fields(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT")
+    headers = auth_headers(ops_token)
+
+    bad_title = {**shared_alert_payload("KPIT"), "title": "   "}
+    assert ops_client.post("/api/ops/shared-alerts", json=bad_title, headers=headers).status_code == 400
+
+    bad_message = {**shared_alert_payload("KPIT"), "message": "   "}
+    assert ops_client.post("/api/ops/shared-alerts", json=bad_message, headers=headers).status_code == 400
+
+    bad_category = {**shared_alert_payload("KPIT"), "category": "   "}
+    assert ops_client.post("/api/ops/shared-alerts", json=bad_category, headers=headers).status_code == 400
+
+    bad_severity = {**shared_alert_payload("KPIT"), "severity": "Info"}
+    assert ops_client.post("/api/ops/shared-alerts", json=bad_severity, headers=headers).status_code == 400
+
+    bad_visibility = {**shared_alert_payload("KPIT"), "visibility": "internal"}
+    assert ops_client.post("/api/ops/shared-alerts", json=bad_visibility, headers=headers).status_code == 400
+
+    expired = {**shared_alert_payload("KPIT"), "expires_at": past_utc()}
+    assert ops_client.post("/api/ops/shared-alerts", json=expired, headers=headers).status_code == 400
+
+
+def test_airline_user_same_airport_can_list_active_shared_alert(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT", organization_name="Airport Ops")
+    create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    assert create.status_code == 201
+
+    create_ops_user("station_pit", operator_mode="airline", airport_ident="KPIT")
+    station_token = login_ops_user(ops_client, "station_pit")
+    res = ops_client.get("/api/ops/shared-alerts", headers=auth_headers(station_token))
+    assert res.status_code == 200
+    data = res.json()
+    assert "advisory coordination notes" in data["metadata"]["advisory"]
+    assert len(data["alerts"]) == 1
+    assert data["alerts"][0]["title"] == "Runway 2 lighting inspection pending"
+    assert data["alerts"][0]["acknowledged"] is False
+
+
+def test_user_assigned_to_different_airport_cannot_see_alert(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT")
+    create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    assert create.status_code == 201
+
+    create_ops_user("station_avp", operator_mode="airline", airport_ident="KAVP")
+    avp_token = login_ops_user(ops_client, "station_avp")
+    res = ops_client.get("/api/ops/shared-alerts", headers=auth_headers(avp_token))
+    assert res.status_code == 200
+    assert res.json()["alerts"] == []
+
+    res = ops_client.get("/api/ops/shared-alerts?airport_ident=KPIT", headers=auth_headers(avp_token))
+    assert res.status_code == 403
+
+
+def test_expired_alerts_do_not_appear_in_active_listing(ops_client):
+    import sqlite3
+    from app.core.config import settings as cfg
+
+    create_ops_user("station_pit", operator_mode="airline", airport_ident="KPIT")
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(cfg.DB_PATH)
+    conn.execute(
+        """INSERT INTO ops_shared_alerts
+           (airport_ident, category, severity, visibility, title, message, source_label, created_by, created_at, updated_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("KPIT", "runway", "Watch", "shared_airline_station", "Expired alert", "Expired", "Airport Ops", "meeks", now, now, past_utc()),
+    )
+    conn.commit()
+    conn.close()
+
+    station_token = login_ops_user(ops_client, "station_pit")
+    active_res = ops_client.get("/api/ops/shared-alerts", headers=auth_headers(station_token))
+    assert active_res.status_code == 200
+    assert active_res.json()["alerts"] == []
+
+    all_res = ops_client.get("/api/ops/shared-alerts?active_only=false", headers=auth_headers(station_token))
+    assert all_res.status_code == 200
+    assert len(all_res.json()["alerts"]) == 1
+
+
+def test_acknowledgement_works_and_is_idempotent(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT")
+    create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    alert_id = create.json()["id"]
+
+    create_ops_user("station_pit", operator_mode="airline", airport_ident="KPIT")
+    station_token = login_ops_user(ops_client, "station_pit")
+    headers = auth_headers(station_token)
+
+    first = ops_client.post(f"/api/ops/shared-alerts/{alert_id}/ack", headers=headers)
+    assert first.status_code == 200
+    assert first.json()["status"] == "acknowledged"
+    second = ops_client.post(f"/api/ops/shared-alerts/{alert_id}/ack", headers=headers)
+    assert second.status_code == 200
+    assert second.json()["acknowledged_at"] == first.json()["acknowledged_at"]
+
+    listed = ops_client.get("/api/ops/shared-alerts", headers=headers)
+    assert listed.json()["alerts"][0]["acknowledged"] is True
+
+
+def test_cannot_acknowledge_alert_for_another_airport(ops_client, ops_token):
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT")
+    create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    alert_id = create.json()["id"]
+
+    create_ops_user("station_avp", operator_mode="airline", airport_ident="KAVP")
+    avp_token = login_ops_user(ops_client, "station_avp")
+    res = ops_client.post(f"/api/ops/shared-alerts/{alert_id}/ack", headers=auth_headers(avp_token))
+    assert res.status_code == 403
+
+
+def test_x_admin_token_blocked_for_role_scoped_shared_alert_endpoints(ops_client):
+    with mock.patch("app.core.config.settings.ADMIN_API_TOKEN", "test-secret"):
+        list_res = ops_client.get("/api/ops/shared-alerts", headers={"X-Admin-Token": "test-secret"})
+        assert list_res.status_code == 403
+
+        create_res = ops_client.post(
+            "/api/ops/shared-alerts",
+            json=shared_alert_payload("KPIT"),
+            headers={"X-Admin-Token": "test-secret"},
+        )
+        assert create_res.status_code == 403
+
+        ack_res = ops_client.post("/api/ops/shared-alerts/1/ack", headers={"X-Admin-Token": "test-secret"})
+        assert ack_res.status_code == 403
 
 
 # ---------------------------------------------------------------------------

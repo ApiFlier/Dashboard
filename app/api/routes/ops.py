@@ -1,7 +1,7 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Header, Depends, status
 from pydantic import BaseModel
@@ -28,6 +28,17 @@ class ChangeCredentialsRequest(BaseModel):
     current_password: str
     new_username: Optional[str] = None
     new_password: Optional[str] = None
+
+
+class SharedAlertCreate(BaseModel):
+    airport_ident: str
+    category: str
+    affected_asset: Optional[str] = None
+    severity: str
+    visibility: str = "shared_airline_station"
+    title: str
+    message: str
+    expires_at: str
 
 
 class OpsLogEntryCreate(BaseModel):
@@ -59,6 +70,15 @@ class OpsInspectionCreate(BaseModel):
 
 _VALID_PRIORITIES = {"Low", "Medium", "High", "Critical"}
 _VALID_STATUSES = {"Open", "In Progress", "Closed"}
+_VALID_OPERATOR_MODES = {"airport", "airline"}
+_VALID_ALERT_SEVERITIES = {"Watch", "Advisory", "Warning", "Critical"}
+_VALID_ALERT_VISIBILITIES = {"shared_airline_station"}
+SHARED_ALERTS_ADVISORY = (
+    "Shared airport alerts are advisory coordination notes only. Verify through "
+    "official airport, NOTAM, ATC, company, and regulatory channels before "
+    "operational decisions. Not for dispatch, release, navigation, operational "
+    "control, or tactical aircraft movement."
+)
 
 
 class MaintenanceItemCreate(BaseModel):
@@ -106,6 +126,84 @@ async def require_ops_auth(
         detail="Ops Mode requires authentication.",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def _get_ops_user_profile(username: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT username, operator_mode, airport_ident, organization_name,
+                      display_name, is_active
+               FROM admin_users
+               WHERE username = ?""",
+            (username,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def require_ops_identity(
+    authorization: str = Header(None),
+    x_admin_token: str = Header(None),
+) -> Dict[str, Any]:
+    """Return the authenticated Ops identity for role-scoped endpoints.
+
+    The legacy X-Admin-Token fallback intentionally does not receive a synthetic
+    airport/role identity because shared alerts enforce per-airport role scope.
+    """
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[len("Bearer "):]
+        username = validate_session(token)
+        if username:
+            profile = _get_ops_user_profile(username)
+            if not profile:
+                raise HTTPException(status_code=401, detail="Ops user profile was not found.")
+            if not profile.get("is_active"):
+                raise HTTPException(status_code=403, detail="Ops user is inactive.")
+            operator_mode = profile.get("operator_mode") or "airport"
+            if operator_mode not in _VALID_OPERATOR_MODES:
+                raise HTTPException(status_code=403, detail="Ops user has an invalid operator mode.")
+            profile["operator_mode"] = operator_mode
+            profile["airport_ident"] = profile.get("airport_ident").upper() if profile.get("airport_ident") else None
+            profile["is_active"] = bool(profile.get("is_active"))
+            profile["auth_source"] = "session"
+            return profile
+
+    if x_admin_token and settings.ADMIN_API_TOKEN and x_admin_token == settings.ADMIN_API_TOKEN:
+        raise HTTPException(
+            status_code=403,
+            detail="X-Admin-Token is not allowed for role-scoped Ops shared alert endpoints.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Ops Mode requires authentication.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _require_assigned_airport(identity: Dict[str, Any]) -> str:
+    airport_ident = identity.get("airport_ident")
+    if not airport_ident:
+        raise HTTPException(status_code=403, detail="Ops user is not assigned to an airport.")
+    return airport_ident.upper()
+
+
+def _parse_future_utc_timestamp(value: str) -> str:
+    if not value or not value.strip():
+        raise HTTPException(status_code=400, detail="expires_at is required.")
+    raw = value.strip()
+    normalized = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="expires_at must be a valid ISO 8601 UTC timestamp.")
+    if parsed.tzinfo is None:
+        raise HTTPException(status_code=400, detail="expires_at must include a UTC timezone offset.")
+    expires_utc = parsed.astimezone(timezone.utc)
+    if expires_utc <= datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="expires_at must be in the future.")
+    return expires_utc.isoformat()
 
 
 # --- Auth endpoints ---
@@ -161,6 +259,163 @@ async def ops_status(username: str = Depends(require_ops_auth)):
         cursor.execute("SELECT COUNT(*) as cnt FROM ops_log_entries")
         row = cursor.fetchone()
         return {"status": "ok", "ops_mode": "v1", "log_entry_count": row["cnt"], "authenticated_as": username}
+
+
+# --- Ops identity and shared airport alerts ---
+
+@router.get("/ops/me")
+async def ops_me(identity: Dict[str, Any] = Depends(require_ops_identity)):
+    return {
+        "username": identity["username"],
+        "operator_mode": identity["operator_mode"],
+        "airport_ident": identity.get("airport_ident"),
+        "organization_name": identity.get("organization_name"),
+        "display_name": identity.get("display_name"),
+        "is_active": identity["is_active"],
+    }
+
+
+def _shared_alert_response(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        **row,
+        "acknowledged": bool(row.get("acknowledged_at")),
+    }
+
+
+@router.get("/ops/shared-alerts")
+async def get_ops_shared_alerts(
+    airport_ident: Optional[str] = None,
+    active_only: bool = True,
+    identity: Dict[str, Any] = Depends(require_ops_identity),
+):
+    assigned_airport = _require_assigned_airport(identity)
+    requested_airport = airport_ident.strip().upper() if airport_ident else assigned_airport
+    if requested_airport != assigned_airport:
+        raise HTTPException(status_code=403, detail="Ops user can only list shared alerts for their assigned airport.")
+
+    conditions = ["a.airport_ident = ?"]
+    params: List[Any] = [requested_airport]
+    if active_only:
+        conditions.append("a.cancelled_at IS NULL")
+        conditions.append("a.expires_at > ?")
+        params.append(datetime.now(timezone.utc).isoformat())
+
+    params.append(identity["username"])
+    where = " AND ".join(conditions)
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""SELECT a.*, ack.acknowledged_at
+                FROM ops_shared_alerts a
+                LEFT JOIN ops_shared_alert_acknowledgements ack
+                  ON ack.alert_id = a.id AND ack.username = ?
+                WHERE {where}
+                ORDER BY a.expires_at ASC, a.created_at DESC""",
+            [params[-1], *params[:-1]],
+        )
+        alerts = [_shared_alert_response(dict(row)) for row in cursor.fetchall()]
+
+    return {
+        "metadata": {
+            "advisory": SHARED_ALERTS_ADVISORY,
+            "active_only": active_only,
+            "airport_ident": requested_airport,
+        },
+        "alerts": alerts,
+    }
+
+
+@router.post("/ops/shared-alerts", status_code=201)
+async def create_ops_shared_alert(
+    alert: SharedAlertCreate,
+    identity: Dict[str, Any] = Depends(require_ops_identity),
+):
+    if identity["operator_mode"] != "airport":
+        raise HTTPException(status_code=403, detail="Only airport operators can create shared airport alerts.")
+
+    assigned_airport = _require_assigned_airport(identity)
+    airport_ident = alert.airport_ident.strip().upper() if alert.airport_ident else ""
+    if airport_ident != assigned_airport:
+        raise HTTPException(status_code=403, detail="Airport operators can only create alerts for their assigned airport.")
+    if not alert.category.strip():
+        raise HTTPException(status_code=400, detail="category cannot be empty.")
+    if alert.severity not in _VALID_ALERT_SEVERITIES:
+        raise HTTPException(status_code=400, detail=f"severity must be one of: {', '.join(sorted(_VALID_ALERT_SEVERITIES))}")
+    if alert.visibility not in _VALID_ALERT_VISIBILITIES:
+        raise HTTPException(status_code=400, detail="visibility must be shared_airline_station.")
+    if not alert.title.strip():
+        raise HTTPException(status_code=400, detail="title cannot be empty.")
+    if not alert.message.strip():
+        raise HTTPException(status_code=400, detail="message cannot be empty.")
+
+    expires_at = _parse_future_utc_timestamp(alert.expires_at)
+    now = datetime.now(timezone.utc).isoformat()
+    source_label = identity.get("organization_name") or "Airport Ops"
+
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO ops_shared_alerts
+               (airport_ident, category, affected_asset, severity, visibility,
+                title, message, source_label, created_by, created_at, updated_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                airport_ident,
+                alert.category.strip(),
+                alert.affected_asset.strip() if alert.affected_asset else None,
+                alert.severity,
+                alert.visibility,
+                alert.title.strip(),
+                alert.message.strip(),
+                source_label.strip() or "Airport Ops",
+                identity["username"],
+                now,
+                now,
+                expires_at,
+            ),
+        )
+        conn.commit()
+        row_id = cursor.lastrowid
+
+    return {"id": row_id, "status": "created", "advisory": SHARED_ALERTS_ADVISORY}
+
+
+@router.post("/ops/shared-alerts/{alert_id}/ack")
+async def acknowledge_ops_shared_alert(
+    alert_id: int,
+    identity: Dict[str, Any] = Depends(require_ops_identity),
+):
+    assigned_airport = _require_assigned_airport(identity)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ops_shared_alerts WHERE id = ?", (alert_id,))
+        alert = cursor.fetchone()
+        if not alert:
+            raise HTTPException(status_code=404, detail="Shared airport alert not found.")
+        if alert["airport_ident"] != assigned_airport:
+            raise HTTPException(status_code=403, detail="Ops user cannot acknowledge alerts for another airport.")
+
+        conn.execute(
+            """INSERT OR IGNORE INTO ops_shared_alert_acknowledgements
+               (alert_id, username, acknowledged_at) VALUES (?, ?, ?)""",
+            (alert_id, identity["username"], now),
+        )
+        conn.commit()
+
+        cursor.execute(
+            """SELECT acknowledged_at FROM ops_shared_alert_acknowledgements
+               WHERE alert_id = ? AND username = ?""",
+            (alert_id, identity["username"]),
+        )
+        ack_row = cursor.fetchone()
+
+    return {
+        "status": "acknowledged",
+        "alert_id": alert_id,
+        "username": identity["username"],
+        "acknowledged_at": ack_row["acknowledged_at"],
+    }
 
 
 # --- Ops log endpoints ---
