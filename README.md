@@ -171,6 +171,7 @@ Navigate to `#/ops` to access Ops Mode.
 | **Shift Handoff** | Available — structured shift-change notes with weather summary, operations summary, and open items |
 | **Inspection Checklist** | Available — internal field/facility review notes and operational awareness; not a certified inspection compliance system |
 | **Maintenance Reminders** | Available — internal follow-up tracking and awareness; not a certified maintenance management or compliance system |
+| **Shared Airport Alerts** | Available — advisory airport-to-airline-station coordination notes for users assigned to the same airport |
 
 ### Default Admin Login
 
@@ -185,6 +186,32 @@ Password: meeks
 > Do not expose Ops Mode publicly without changing the default credentials.
 
 Go to `#/ops` → **Change Credentials** to update username and password. Credentials are stored hashed (bcrypt) in the runtime SQLite database inside the Docker named volume and persist across container rebuilds.
+
+### Shared Airport Alerts Profile Setup
+
+Shared Airport Alerts require each Ops user to have an Ops profile with:
+
+- `operator_mode`: `airport` or `airline`
+- `airport_ident`: assigned airport identifier, such as `KPIT`
+- optional `organization_name` and `display_name`
+- `is_active`: active/inactive flag
+
+Airport-mode users assigned to an airport can create active shared alerts for that airport. Airline-mode users assigned to the same airport can view and acknowledge those alerts. Users without an assigned airport will still be able to enter Ops Mode, but the Shared Airport Alerts panel will ask for an assigned airport before showing alerts or forms.
+
+Use the helper script to list or update existing Ops profiles without exposing password hashes or session tokens:
+
+```bash
+python3 scripts/manage_ops_profiles.py list
+python3 scripts/manage_ops_profiles.py set meeks --operator-mode airport --airport-ident KPIT --organization-name "Airport Ops" --display-name "PIT Ops"
+```
+
+When running against the production Docker volume, run the same helper inside the app container so it can reach the runtime SQLite database:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py list
+```
+
+Shared airport alerts are advisory coordination notes only. Verify through official airport, NOTAM, ATC, company, and regulatory channels before operational decisions. Not for dispatch, release, navigation, operational control, or tactical aircraft movement.
 
 ### Ops Mode Security Model
 

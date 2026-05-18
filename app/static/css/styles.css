@@ -392,6 +392,7 @@ main {
 .chip.lifr { background: var(--lifr); }
 .chip.unknown { background: var(--gray); }
 .chip.info { background: var(--info); }
+.chip.warning { background: var(--warning); }
 .chip.danger { background: var(--danger); }
 
 .chip.risk-low { background: var(--success); }
@@ -405,6 +406,92 @@ main {
     margin-bottom: 1rem;
     font-size: 0.9rem;
     color: var(--text);
+}
+
+.ops-shared-alerts-card {
+    gap: 0;
+}
+
+.ops-shared-create {
+    border: 1px solid var(--border-color);
+    background: var(--card-bg-alt);
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.ops-shared-empty {
+    color: var(--text-muted);
+    margin: 0;
+    padding: 0.5rem 0;
+}
+
+.ops-shared-alert {
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.85rem;
+    background: var(--card-bg-alt);
+    display: flex;
+    flex-direction: column;
+}
+
+.ops-shared-alert.unacknowledged {
+    border-left-color: var(--warning);
+}
+
+.ops-shared-alert.acknowledged {
+    opacity: 0.82;
+}
+
+.ops-shared-alert-topline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+    margin-bottom: 0.55rem;
+}
+
+.ops-shared-alert-status {
+    margin-left: auto;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: var(--text-muted);
+}
+
+.ops-shared-alert-status.unacknowledged {
+    color: var(--warning);
+}
+
+.ops-shared-alert-status.acknowledged {
+    color: var(--success);
+}
+
+.ops-shared-alert-title {
+    font-weight: bold;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+}
+
+.ops-shared-alert-message {
+    font-size: 0.9rem;
+    margin-bottom: 0.7rem;
+    white-space: pre-wrap;
+}
+
+.ops-shared-alert-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.35rem 0.8rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+
+.ops-shared-advisory {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+    margin: 1rem 0 0 0;
 }
 
 .table-container {

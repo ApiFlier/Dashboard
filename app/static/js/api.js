@@ -140,6 +140,22 @@ const api = {
         return this._opsGet('/api/ops/status');
     },
 
+    async opsMe() {
+        return this._opsGet('/api/ops/me');
+    },
+
+    async opsGetSharedAlerts() {
+        return this._opsGet('/api/ops/shared-alerts');
+    },
+
+    async opsCreateSharedAlert(payload) {
+        return this._opsPost('/api/ops/shared-alerts', payload);
+    },
+
+    async opsAcknowledgeSharedAlert(alertId) {
+        return this._opsPost(`/api/ops/shared-alerts/${encodeURIComponent(alertId)}/ack`, {});
+    },
+
     async opsGetLogs(airportIdent, limit = 50) {
         const params = new URLSearchParams({ limit });
         if (airportIdent) params.set('airport_ident', airportIdent);

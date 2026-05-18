@@ -4,6 +4,7 @@ let isRefreshing = false;
 let settingsLoaded = false;
 const DEBUG = false;
 const DEBUG_ROUTER = false;
+const SHARED_ALERT_ADVISORY = 'Shared airport alerts are advisory coordination notes only. Verify through official airport, NOTAM, ATC, company, and regulatory channels before operational decisions. Not for dispatch, release, navigation, operational control, or tactical aircraft movement.';
 
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -1525,6 +1526,22 @@ async function renderOpsHome(container) {
                 </div>
             </div>
 
+            <section class="card ops-shared-alerts-card" style="margin-bottom: 1.75rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+                    <div>
+                        <h2 style="margin-bottom: 0.35rem;">Active Airport Alerts</h2>
+                        <div id="ops-shared-profile" style="font-size: 0.85rem; color: var(--text-muted);">Loading Ops profile...</div>
+                    </div>
+                    <button id="ops-shared-refresh-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text);">Refresh</button>
+                </div>
+                <div id="ops-shared-create-wrap" style="display: none; margin-top: 1rem;"></div>
+                <div id="ops-shared-alert-msg" style="display: none; margin-top: 0.75rem; font-size: 0.9rem;"></div>
+                <div id="ops-shared-alerts-list" style="margin-top: 1rem;">
+                    <div class="loading">Loading shared airport alerts...</div>
+                </div>
+                <p class="ops-shared-advisory">${SHARED_ALERT_ADVISORY}</p>
+            </section>
+
             <h2 style="font-size: 0.95rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 0.75rem 0;">Today's Snapshot</h2>
             <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.75rem;">
                 <div style="${tileStyle}"><div id="tile-log" style="font-size: 1.75rem; font-weight: bold; color: var(--accent);">—</div><div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Log Entries</div></div>
@@ -1644,6 +1661,8 @@ async function renderOpsHome(container) {
         }
     });
 
+    await renderOpsSharedAlertsPanel(container, inputStyle);
+
     // Fetch and render overview data
     const typeBadge = (t) => {
         const map = {
@@ -1738,6 +1757,233 @@ async function renderOpsHome(container) {
             const el = document.getElementById(id);
             if (el) el.innerText = '?';
         });
+    }
+}
+
+function formatOpsDateTime(value) {
+    if (!value) return 'Not set';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString([], {
+        year: 'numeric',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short',
+    });
+}
+
+function sharedAlertSeverityClass(severity) {
+    const map = {
+        Watch: 'info',
+        Advisory: 'info',
+        Warning: 'warning',
+        Critical: 'danger',
+    };
+    return map[severity] || 'info';
+}
+
+function renderSharedAlertItem(alert, profile) {
+    const acknowledged = Boolean(alert.acknowledged);
+    const canAck = profile.operator_mode === 'airline' && !acknowledged;
+    const statusText = acknowledged ? 'Acknowledged' : 'Unacknowledged';
+    const affectedAsset = alert.affected_asset ? utils.escapeHtml(alert.affected_asset) : 'Asset not specified';
+    const sourceLabel = alert.source_label || 'Airport Ops';
+
+    return `
+        <div class="ops-shared-alert ${acknowledged ? 'acknowledged' : 'unacknowledged'}">
+            <div class="ops-shared-alert-topline">
+                <span class="chip ${sharedAlertSeverityClass(alert.severity)}" style="border: none;">${utils.escapeHtml(alert.severity)}</span>
+                <span class="chip" style="border: 1px solid var(--border-color); background: var(--chip-bg); color: var(--text);">${utils.escapeHtml(alert.category)}</span>
+                <span class="ops-shared-alert-status ${acknowledged ? 'acknowledged' : 'unacknowledged'}">${statusText}</span>
+            </div>
+            <div class="ops-shared-alert-title">${utils.escapeHtml(alert.title)}</div>
+            <div class="ops-shared-alert-message">${utils.escapeHtml(alert.message)}</div>
+            <div class="ops-shared-alert-meta">
+                <span><strong>Airport:</strong> ${utils.escapeHtml(alert.airport_ident)}</span>
+                <span><strong>Asset:</strong> ${affectedAsset}</span>
+                <span><strong>Source:</strong> ${utils.escapeHtml(sourceLabel)}</span>
+                <span><strong>Created:</strong> ${formatOpsDateTime(alert.created_at)}</span>
+                <span><strong>Updated:</strong> ${formatOpsDateTime(alert.updated_at)}</span>
+                <span><strong>Expires:</strong> ${formatOpsDateTime(alert.expires_at)}</span>
+            </div>
+            ${canAck ? `<button class="chip info ops-alert-ack-btn" data-alert-id="${alert.id}" style="border: none; cursor: pointer; align-self: flex-start; margin-top: 0.75rem;">Acknowledge</button>` : ''}
+        </div>
+    `;
+}
+
+async function renderOpsSharedAlertsPanel(container, inputStyle) {
+    const profileEl = document.getElementById('ops-shared-profile');
+    const createWrap = document.getElementById('ops-shared-create-wrap');
+    const listEl = document.getElementById('ops-shared-alerts-list');
+    const msgEl = document.getElementById('ops-shared-alert-msg');
+    const refreshBtn = document.getElementById('ops-shared-refresh-btn');
+    if (!profileEl || !createWrap || !listEl || !msgEl || !refreshBtn) return;
+
+    const showMessage = (message, kind = 'success') => {
+        msgEl.style.display = 'block';
+        msgEl.style.color = kind === 'error' ? 'var(--danger)' : 'var(--success)';
+        msgEl.innerText = message;
+        window.setTimeout(() => {
+            if (msgEl.innerText === message) {
+                msgEl.innerText = '';
+                msgEl.style.display = 'none';
+            }
+        }, 4500);
+    };
+
+    let profile = null;
+
+    const loadAlerts = async () => {
+        listEl.innerHTML = '<div class="loading">Loading shared airport alerts...</div>';
+        try {
+            const data = await api.opsGetSharedAlerts();
+            const alerts = data.alerts || [];
+            if (alerts.length === 0) {
+                listEl.innerHTML = '<p class="ops-shared-empty">No active shared airport alerts.</p>';
+            } else {
+                listEl.innerHTML = alerts.map(alert => renderSharedAlertItem(alert, profile)).join('');
+                listEl.querySelectorAll('.ops-alert-ack-btn').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        btn.disabled = true;
+                        btn.innerText = 'Acknowledging...';
+                        try {
+                            await api.opsAcknowledgeSharedAlert(btn.dataset.alertId);
+                            showMessage('Alert acknowledged.');
+                            await loadAlerts();
+                        } catch (e) {
+                            showMessage(e.message || 'Failed to acknowledge alert.', 'error');
+                            btn.disabled = false;
+                            btn.innerText = 'Acknowledge';
+                        }
+                    });
+                });
+            }
+        } catch (e) {
+            if (e.status === 401) {
+                localStorage.removeItem('ops_session_token');
+                renderOpsLogin(container, '');
+                return;
+            }
+            listEl.innerHTML = `<div class="warning-callout">Failed to load shared airport alerts: ${utils.escapeHtml(e.message || 'Unknown error')}</div>`;
+        }
+    };
+
+    const renderCreateForm = () => {
+        const categories = ['Runway', 'Taxiway', 'Ramp', 'Gate', 'Weather', 'Lighting', 'Construction', 'Fueling', 'Baggage', 'Staffing', 'Security', 'Facilities', 'General'];
+        const severities = ['Watch', 'Advisory', 'Warning', 'Critical'];
+        createWrap.style.display = 'block';
+        createWrap.innerHTML = `
+            <div class="ops-shared-create">
+                <h3 style="margin: 0 0 0.75rem 0; font-size: 0.95rem;">Create Shared Airport Alert</h3>
+                <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Airport</label>
+                        <input type="text" value="${utils.escapeHtml(profile.airport_ident)}" disabled style="${inputStyle}">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Category</label>
+                        <select id="shared-alert-category" style="${inputStyle}">
+                            ${categories.map(c => `<option value="${c}">${c}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Severity</label>
+                        <select id="shared-alert-severity" style="${inputStyle}">
+                            ${severities.map(s => `<option value="${s}">${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Expires In</label>
+                        <select id="shared-alert-expiry-hours" style="${inputStyle}">
+                            <option value="2">2 hours</option>
+                            <option value="4" selected>4 hours</option>
+                            <option value="8">8 hours</option>
+                            <option value="24">24 hours</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Affected Asset</label>
+                        <input type="text" id="shared-alert-asset" placeholder="e.g. Runway 10/28" style="${inputStyle}">
+                    </div>
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Title</label>
+                    <input type="text" id="shared-alert-title" placeholder="Potential issue reported" style="${inputStyle}">
+                </div>
+                <div style="margin-bottom: 0.75rem;">
+                    <label style="display: block; font-size: 0.82rem; font-weight: bold; margin-bottom: 0.2rem;">Message</label>
+                    <textarea id="shared-alert-message" rows="3" placeholder="Potential issue reported. Inspection pending. Verify through official channels before operational decisions." style="${inputStyle} resize: vertical; font-family: inherit;"></textarea>
+                </div>
+                <button id="shared-alert-submit-btn" class="chip info" style="border: none; cursor: pointer; padding: 0.55rem 1.1rem;">Create Alert</button>
+            </div>
+        `;
+
+        document.getElementById('shared-alert-submit-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('shared-alert-submit-btn');
+            const title = document.getElementById('shared-alert-title').value.trim();
+            const message = document.getElementById('shared-alert-message').value.trim();
+            if (!title) { showMessage('Title is required.', 'error'); return; }
+            if (!message) { showMessage('Message is required.', 'error'); return; }
+
+            const expiresAt = new Date(Date.now() + Number(document.getElementById('shared-alert-expiry-hours').value) * 60 * 60 * 1000).toISOString();
+            btn.disabled = true;
+            btn.innerText = 'Creating...';
+            try {
+                await api.opsCreateSharedAlert({
+                    airport_ident: profile.airport_ident,
+                    category: document.getElementById('shared-alert-category').value,
+                    affected_asset: document.getElementById('shared-alert-asset').value.trim() || null,
+                    severity: document.getElementById('shared-alert-severity').value,
+                    visibility: 'shared_airline_station',
+                    title,
+                    message,
+                    expires_at: expiresAt,
+                });
+                document.getElementById('shared-alert-asset').value = '';
+                document.getElementById('shared-alert-title').value = '';
+                document.getElementById('shared-alert-message').value = '';
+                showMessage('Shared airport alert created.');
+                await loadAlerts();
+            } catch (e) {
+                showMessage(e.message || 'Failed to create shared airport alert.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Create Alert';
+            }
+        });
+    };
+
+    try {
+        profile = await api.opsMe();
+        const displayName = profile.display_name || profile.username || 'Ops user';
+        const airportText = profile.airport_ident ? profile.airport_ident : 'No assigned airport';
+        profileEl.innerHTML = `${utils.escapeHtml(displayName)} &middot; ${utils.escapeHtml(profile.operator_mode || 'ops')} mode &middot; ${utils.escapeHtml(airportText)}`;
+
+        if (!profile.airport_ident) {
+            createWrap.style.display = 'none';
+            listEl.innerHTML = '<p class="ops-shared-empty">Shared Airport Alerts require an assigned airport for this Ops profile.</p>';
+            return;
+        }
+
+        if (profile.operator_mode === 'airport') {
+            renderCreateForm();
+        } else {
+            createWrap.style.display = 'none';
+            createWrap.innerHTML = '';
+        }
+
+        refreshBtn.addEventListener('click', loadAlerts);
+        await loadAlerts();
+    } catch (e) {
+        if (e.status === 401) {
+            localStorage.removeItem('ops_session_token');
+            renderOpsLogin(container, '');
+            return;
+        }
+        profileEl.innerText = 'Unable to load Ops profile.';
+        listEl.innerHTML = `<div class="warning-callout">Failed to load Ops profile: ${utils.escapeHtml(e.message || 'Unknown error')}</div>`;
     }
 }
 
