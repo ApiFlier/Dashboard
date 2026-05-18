@@ -198,18 +198,23 @@ Shared Airport Alerts require each Ops user to have an Ops profile with:
 
 Airport-mode users assigned to an airport can create active shared alerts for that airport. Airline-mode users assigned to the same airport can view and acknowledge those alerts. Users without an assigned airport will still be able to enter Ops Mode, but the Shared Airport Alerts panel will ask for an assigned airport before showing alerts or forms.
 
-Use the helper script to list or update existing Ops profiles without exposing password hashes or session tokens:
+Use the helper script to list, update, or create Ops profiles without printing passwords, password hashes, or session tokens:
 
 ```bash
 python3 scripts/manage_ops_profiles.py list
 python3 scripts/manage_ops_profiles.py set meeks --operator-mode airport --airport-ident KPIT --organization-name "Airport Ops" --display-name "PIT Ops"
+python3 scripts/manage_ops_profiles.py create-user pit-airline --operator-mode airline --airport-ident KPIT --organization-name "Example Airline Station" --display-name "PIT Airline Station Ops"
 ```
 
 When running against the production Docker volume, run the same helper inside the app container so it can reach the runtime SQLite database:
 
 ```bash
 docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py list
+docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py set meeks --operator-mode airport --airport-ident KPIT --organization-name "Airport Ops" --display-name "PIT Ops"
+docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py create-user pit-airline --operator-mode airline --airport-ident KPIT --organization-name "Example Airline Station" --display-name "PIT Airline Station Ops"
 ```
+
+The `create-user` command prompts for a password by default. For a basic airport-to-airline workflow, configure an airport-mode user for the airport, create an airline-mode station user for the same airport, have the airport user create a shared alert in Ops Mode, then have the airline station user view and acknowledge it.
 
 Shared airport alerts are advisory coordination notes only. Verify through official airport, NOTAM, ATC, company, and regulatory channels before operational decisions. Not for dispatch, release, navigation, operational control, or tactical aircraft movement.
 

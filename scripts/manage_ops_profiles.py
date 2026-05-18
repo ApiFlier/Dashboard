@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Manage Ops user profile fields for Shared Airport Alerts.
+"""Manage Ops user profiles for Shared Airport Alerts.
 
-This helper intentionally does not create users, modify passwords, print
-password hashes, print session tokens, delete users, or reset sessions.
+This helper intentionally does not print passwords, print password hashes,
+print session tokens, delete users, or reset sessions.
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import re
 import sqlite3
@@ -18,6 +19,7 @@ from typing import Iterable
 
 
 VALID_OPERATOR_MODES = {"airport", "airline"}
+MIN_PASSWORD_LENGTH = 8
 PROFILE_FIELDS = (
     "username",
     "operator_mode",
@@ -103,6 +105,39 @@ def user_exists(conn: sqlite3.Connection, username: str) -> bool:
     return bool(row)
 
 
+def normalize_username(username: str) -> str:
+    value = username.strip()
+    if not value:
+        raise SystemExit("username cannot be blank.")
+    if not re.fullmatch(r"[A-Za-z0-9_.@-]{3,64}", value):
+        raise SystemExit("username must be 3-64 characters and use only letters, numbers, dot, underscore, hyphen, or @.")
+    return value
+
+
+def require_password(password: str) -> str:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise SystemExit(f"password must be at least {MIN_PASSWORD_LENGTH} characters.")
+    return password
+
+
+def read_new_password(args: argparse.Namespace) -> str:
+    if args.password and args.password_stdin:
+        raise SystemExit("Use only one password input option: --password or --password-stdin.")
+
+    if args.password_stdin:
+        password = sys.stdin.readline().rstrip("\n")
+        return require_password(password)
+
+    if args.password:
+        return require_password(args.password)
+
+    password = getpass.getpass("Password: ")
+    confirm = getpass.getpass("Confirm password: ")
+    if password != confirm:
+        raise SystemExit("password confirmation did not match.")
+    return require_password(password)
+
+
 def format_row(row: sqlite3.Row) -> list[str]:
     return [
         row["username"] or "",
@@ -142,8 +177,9 @@ def list_users(conn: sqlite3.Connection) -> None:
 
 
 def set_profile(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
-    if not user_exists(conn, args.username):
-        raise SystemExit(f"Ops user not found: {args.username}")
+    username = normalize_username(args.username)
+    if not user_exists(conn, username):
+        raise SystemExit(f"Ops user not found: {username}")
 
     updates: list[str] = []
     values: list[object] = []
@@ -178,22 +214,62 @@ def set_profile(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
 
     updates.append("updated_at = ?")
     values.append(datetime.now(timezone.utc).isoformat())
-    values.append(args.username)
+    values.append(username)
 
     conn.execute(f"UPDATE admin_users SET {', '.join(updates)} WHERE username = ?", values)
     conn.commit()
-    print(f"Updated Ops profile for {args.username}.")
+    print(f"Updated Ops profile for {username}.")
+
+
+def create_user(conn: sqlite3.Connection, args: argparse.Namespace) -> None:
+    username = normalize_username(args.username)
+    if user_exists(conn, username):
+        raise SystemExit(f"Ops user already exists: {username}. Use the set command to update profile fields.")
+
+    operator_mode = args.operator_mode
+    if operator_mode not in VALID_OPERATOR_MODES:
+        raise SystemExit("operator_mode must be airport or airline.")
+
+    airport_ident = normalize_airport_ident(args.airport_ident)
+    if airport_ident and not airport_exists(conn, airport_ident):
+        raise SystemExit(f"Airport ident not found in reference data: {airport_ident}")
+
+    password = read_new_password(args)
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from app.services.ops_auth import hash_password  # pylint: disable=import-outside-toplevel
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT INTO admin_users
+           (username, password_hash, created_at, updated_at, operator_mode,
+            airport_ident, organization_name, display_name, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            username,
+            hash_password(password),
+            now,
+            now,
+            operator_mode,
+            airport_ident,
+            args.organization_name.strip() if args.organization_name else None,
+            args.display_name.strip() if args.display_name else None,
+            args.is_active,
+        ),
+    )
+    conn.commit()
+    print(f"Created Ops user {username}.")
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="List and update existing Ops user profile fields for Shared Airport Alerts.",
+        description="List, create, and update Ops user profile fields for Shared Airport Alerts.",
         epilog=(
             "Examples:\n"
             "  python3 scripts/manage_ops_profiles.py list\n"
             "  python3 scripts/manage_ops_profiles.py set meeks --operator-mode airport --airport-ident KPIT --organization-name \"Airport Ops\" --display-name \"PIT Ops\"\n"
-            "  python3 scripts/manage_ops_profiles.py set station_pit --operator-mode airline --airport-ident KPIT --organization-name \"Example Air Station\" --is-active true\n"
-            "\nThis script never prints password hashes or session tokens and never changes passwords."
+            "  python3 scripts/manage_ops_profiles.py create-user pit-airline --operator-mode airline --airport-ident KPIT --organization-name \"Example Airline Station\" --display-name \"PIT Airline Station Ops\"\n"
+            "\nThis script never prints passwords, password hashes, or session tokens."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -210,6 +286,16 @@ def build_parser() -> argparse.ArgumentParser:
     set_parser.add_argument("--organization-name", help="Organization/source label for this Ops profile.")
     set_parser.add_argument("--display-name", help="Display name for this Ops profile.")
     set_parser.add_argument("--is-active", type=parse_bool, help="Set active status: true/false.")
+
+    create_parser = sub.add_parser("create-user", help="Create an Ops user with Shared Airport Alerts profile fields.")
+    create_parser.add_argument("username", help="New Ops username.")
+    create_parser.add_argument("--operator-mode", required=True, choices=sorted(VALID_OPERATOR_MODES), help="Ops role: airport or airline.")
+    create_parser.add_argument("--airport-ident", required=True, help="Assigned airport ident. Validated against airports table and stored uppercase.")
+    create_parser.add_argument("--organization-name", help="Organization/source label for this Ops profile.")
+    create_parser.add_argument("--display-name", help="Display name for this Ops profile.")
+    create_parser.add_argument("--is-active", type=parse_bool, default=1, help="Initial active status. Defaults to true.")
+    create_parser.add_argument("--password", help="Password for non-interactive use. Prefer prompt or --password-stdin when possible.")
+    create_parser.add_argument("--password-stdin", action="store_true", help="Read the password from stdin without echoing or printing it.")
     return parser
 
 
@@ -225,6 +311,9 @@ def main() -> int:
             list_users(conn)
         elif args.command == "set":
             set_profile(conn, args)
+            list_users(conn)
+        elif args.command == "create-user":
+            create_user(conn, args)
             list_users(conn)
         else:
             parser.error("Unknown command.")

@@ -1,6 +1,8 @@
 """
 Tests for Ops Mode v1: schema, auth, and ops log endpoints.
 """
+import subprocess
+import sys
 import tempfile
 from datetime import datetime, timezone, timedelta
 
@@ -75,6 +77,23 @@ def login_ops_user(client, username, password="secret"):
     res = client.post("/api/ops/auth/login", json={"username": username, "password": password})
     assert res.status_code == 200, res.json()
     return res.json()["token"]
+
+
+def run_profile_helper(db_path, *args, password_input=None):
+    cmd = [
+        sys.executable,
+        "scripts/manage_ops_profiles.py",
+        "--db-path",
+        db_path,
+        *args,
+    ]
+    return subprocess.run(
+        cmd,
+        input=password_input,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 def future_utc(hours=4):
@@ -281,6 +300,94 @@ def test_airline_user_same_airport_can_list_active_shared_alert(ops_client, ops_
     assert len(data["alerts"]) == 1
     assert data["alerts"][0]["title"] == "Runway 2 lighting inspection pending"
     assert data["alerts"][0]["acknowledged"] is False
+
+
+def test_profile_helper_creates_airline_user_for_shared_alert_workflow(ops_client, ops_token):
+    import sqlite3
+    from app.core.config import settings as cfg
+
+    password = "airline-test-password"
+    created = run_profile_helper(
+        cfg.DB_PATH,
+        "create-user",
+        "pit-airline-helper",
+        "--operator-mode",
+        "airline",
+        "--airport-ident",
+        "KPIT",
+        "--organization-name",
+        "Example Airline Station",
+        "--display-name",
+        "PIT Airline Station Ops",
+        "--password-stdin",
+        password_input=f"{password}\n",
+    )
+    assert created.returncode == 0, created.stderr
+    assert "Created Ops user pit-airline-helper." in created.stdout
+    assert password not in created.stdout
+    assert password not in created.stderr
+
+    duplicate = run_profile_helper(
+        cfg.DB_PATH,
+        "create-user",
+        "pit-airline-helper",
+        "--operator-mode",
+        "airline",
+        "--airport-ident",
+        "KPIT",
+        "--password-stdin",
+        password_input=f"{password}\n",
+    )
+    assert duplicate.returncode != 0
+    assert "already exists" in duplicate.stderr
+
+    set_ops_profile("meeks", operator_mode="airport", airport_ident="KPIT", organization_name="Airport Ops")
+    meeks_status = ops_client.get("/api/ops/status", headers=auth_headers(ops_token))
+    assert meeks_status.status_code == 200
+
+    station_token = login_ops_user(ops_client, "pit-airline-helper", password=password)
+    me = ops_client.get("/api/ops/me", headers=auth_headers(station_token))
+    assert me.status_code == 200
+    assert me.json()["operator_mode"] == "airline"
+    assert me.json()["airport_ident"] == "KPIT"
+
+    cannot_create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(station_token))
+    assert cannot_create.status_code == 403
+
+    create = ops_client.post("/api/ops/shared-alerts", json=shared_alert_payload("KPIT"), headers=auth_headers(ops_token))
+    assert create.status_code == 201
+    alert_id = create.json()["id"]
+
+    list_res = ops_client.get("/api/ops/shared-alerts", headers=auth_headers(station_token))
+    assert list_res.status_code == 200
+    alerts = list_res.json()["alerts"]
+    assert len(alerts) == 1
+    assert alerts[0]["id"] == alert_id
+    assert alerts[0]["acknowledged"] is False
+
+    ack = ops_client.post(f"/api/ops/shared-alerts/{alert_id}/ack", headers=auth_headers(station_token))
+    assert ack.status_code == 200
+
+    listed_after_ack = ops_client.get("/api/ops/shared-alerts", headers=auth_headers(station_token))
+    assert listed_after_ack.status_code == 200
+    assert listed_after_ack.json()["alerts"][0]["acknowledged"] is True
+
+    now = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(cfg.DB_PATH)
+    cursor = conn.execute(
+        """INSERT INTO ops_shared_alerts
+           (airport_ident, category, severity, visibility, title, message, source_label, created_by, created_at, updated_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("KAVP", "runway", "Watch", "shared_airline_station", "Different airport", "Different airport", "Airport Ops", "meeks", now, now, future_utc()),
+    )
+    other_alert_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    forbidden_list = ops_client.get("/api/ops/shared-alerts?airport_ident=KAVP", headers=auth_headers(station_token))
+    assert forbidden_list.status_code == 403
+    forbidden_ack = ops_client.post(f"/api/ops/shared-alerts/{other_alert_id}/ack", headers=auth_headers(station_token))
+    assert forbidden_ack.status_code == 403
 
 
 def test_user_assigned_to_different_airport_cannot_see_alert(ops_client, ops_token):
