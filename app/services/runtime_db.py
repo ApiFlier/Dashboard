@@ -10,7 +10,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 def get_db_path() -> str:
     return settings.DB_PATH
@@ -262,6 +262,64 @@ def run_migrations(conn: sqlite3.Connection):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_due_date ON ops_maintenance_items(due_date)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_maint_created_at ON ops_maintenance_items(created_at)")
         set_schema_version(conn, 8)
+
+    if current_version < 9:
+        logger.info("Running schema migration to version 9")
+        admin_user_columns = {
+            "operator_mode": "TEXT NOT NULL DEFAULT 'airport'",
+            "airport_ident": "TEXT",
+            "organization_name": "TEXT",
+            "display_name": "TEXT",
+            "is_active": "INTEGER NOT NULL DEFAULT 1",
+        }
+        for column_name, column_definition in admin_user_columns.items():
+            try:
+                conn.execute(f"ALTER TABLE admin_users ADD COLUMN {column_name} {column_definition}")
+            except sqlite3.OperationalError as e:
+                # Column may already exist if a previous v9 attempt partially ran.
+                logger.warning(f"Migration to v9 warning for admin_users.{column_name}: {e}")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_shared_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                airport_ident TEXT NOT NULL,
+                category TEXT NOT NULL,
+                affected_asset TEXT,
+                severity TEXT NOT NULL,
+                visibility TEXT NOT NULL DEFAULT 'shared_airline_station',
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                source_label TEXT NOT NULL DEFAULT 'Airport Ops',
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                cancelled_at TEXT,
+                cancelled_by TEXT
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_shared_alerts_airport ON ops_shared_alerts(airport_ident)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_ops_shared_alerts_expires ON ops_shared_alerts(expires_at)")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ops_shared_alerts_active "
+            "ON ops_shared_alerts(airport_ident, expires_at, cancelled_at)"
+        )
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ops_shared_alert_acknowledgements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                alert_id INTEGER NOT NULL,
+                username TEXT NOT NULL,
+                acknowledged_at TEXT NOT NULL,
+                FOREIGN KEY(alert_id) REFERENCES ops_shared_alerts(id),
+                UNIQUE(alert_id, username)
+            )
+        """)
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ops_alert_ack_user "
+            "ON ops_shared_alert_acknowledgements(username)"
+        )
+        set_schema_version(conn, 9)
 
 def seed_default_settings(conn: sqlite3.Connection):
     now = datetime.now(timezone.utc).isoformat()
