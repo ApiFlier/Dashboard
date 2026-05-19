@@ -14,6 +14,10 @@ echo "Destination: $ABS_BACKUP_PATH"
 
 # Create a temporary directory to assemble the backup
 TMP_DIR=$(mktemp -d)
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
 # 1. Backup .env
 if [ -f .env ]; then
@@ -38,12 +42,11 @@ fi
 # Assemble final tarball
 tar -czf "$BACKUP_FILE" -C "$TMP_DIR" .
 
-rm -rf "$TMP_DIR"
-
 # Fix permissions if created via root in docker volume backup step
 CURRENT_USER=$(id -u):$(id -g)
 sudo chown "$CURRENT_USER" "$BACKUP_FILE" 2>/dev/null || true
 
 echo "------------------------------------------------"
 echo "Backup successfully created: $ABS_BACKUP_PATH"
+echo "Keep this file private; it may include .env and runtime database contents."
 echo "------------------------------------------------"

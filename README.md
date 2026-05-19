@@ -54,6 +54,8 @@ To set up for the first time, choose option **1** from the menu, or run `./setup
 - Starts the container with `restart: unless-stopped`
 - Prints the local URL when the app is healthy
 
+Open the URL printed by setup. The dashboard is at `/` and Ops Mode is at `/#/ops`.
+
 ---
 
 ## What AirfieldOps Does
@@ -216,6 +218,8 @@ docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 script
 
 The `create-user` command prompts for a password by default. For a basic airport-to-airline workflow, configure an airport-mode user for the airport, create an airline-mode station user for the same airport, have the airport user create a shared alert in Ops Mode, then have the airline station user view and acknowledge it.
 
+Shared Airport Alerts will not show airport-scoped alerts for users that do not have both `operator_mode` and `airport_ident` set. Use `list` first to verify profile fields, then use `set` to assign missing values.
+
 Shared airport alerts are advisory coordination notes only. Verify through official airport, NOTAM, ATC, company, and regulatory channels before operational decisions. Not for dispatch, release, navigation, operational control, or tactical aircraft movement.
 
 ### Ops Mode Security Model
@@ -241,13 +245,15 @@ Shared airport alerts are advisory coordination notes only. Verify through offic
 
 ## Runtime State and Persistence
 
-All persistent state lives in Docker named volume `airfieldops_state`, mounted at `/var/lib/airfieldops` inside the container:
+All persistent runtime state lives in Docker named volume `airfieldops_state`, mounted at `/var/lib/airfieldops` inside the container:
 
 | File | Purpose |
 |------|---------|
-| `airfieldops.sqlite` | Real airport/runway/frequency database, settings, favorites |
+| `airfieldops.sqlite` | Airport/runway/frequency database, settings, favorites, Ops users, Ops records, and Shared Airport Alerts |
 
 The airport database (sourced from OurAirports plus hand-curated geometry for airports like KAVP and KAGC) is seeded on first run. Weather cache is in-memory and disposable — a restart loses no airport data.
+
+Normal setup, update, restart, and rebuild flows preserve this volume by default.
 
 **Backup and restore:**
 ```bash
@@ -295,6 +301,8 @@ The test suite covers:
 
 Handles `.env` creation, port discovery, volume provisioning, image build, and health check in one step.
 
+The container is created with Docker restart policy `unless-stopped`, so it should start automatically after a host reboot unless you explicitly stopped it.
+
 ### Updating a running deployment
 
 ```bash
@@ -304,6 +312,18 @@ Handles `.env` creation, port discovery, volume provisioning, image build, and h
 ```
 
 `update.sh` checks for uncommitted local changes, pulls the latest code (fast-forward only), creates a pre-update backup, rebuilds the image, restarts the container, and waits for the health check. Logs are shown automatically if startup fails.
+
+The update flow replaces the container image but preserves the Docker volume and runtime database.
+
+### Starting and restarting containers
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml up -d       # start or apply config
+docker restart airfieldops-app                               # quick restart
+docker compose -f deploy/docker-compose.prod.yml logs --tail=100 airfieldops
+```
+
+Use `docker compose down` for a normal stop. Do not use `docker compose down -v` unless you intentionally want to delete the runtime volume.
 
 ### Production decoupling
 

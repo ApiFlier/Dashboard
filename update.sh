@@ -33,6 +33,8 @@ set -a
 source .env
 set +a
 PORT=${APP_PORT:-8080}
+echo "Using configured URL: http://localhost:${PORT}"
+echo "Runtime data volume 'airfieldops_state' will be preserved."
 
 # 2. Dirty git check
 if git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -123,6 +125,7 @@ echo "================================================"
 echo "  Update complete!"
 echo "  Dashboard : http://localhost:${PORT}/"
 echo "  Ops Mode  : http://localhost:${PORT}/#/ops"
+echo "  Data      : preserved in Docker volume airfieldops_state"
 echo "================================================"
 echo ""
 echo "  To update config or credentials : ./menu.sh → option 3"

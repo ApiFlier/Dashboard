@@ -126,6 +126,8 @@ while true; do
             echo "  Dashboard : ${APP_URL}/"
             echo "  Ops Mode  : ${APP_URL}/#/ops"
             echo "  Health    : ${APP_URL}/api/health"
+            echo "  Reboot    : container restart policy is unless-stopped"
+            echo "  Data      : Docker volume airfieldops_state is preserved"
             echo ""
             printf "Press Enter to return to menu..."
             read -r
@@ -153,6 +155,9 @@ while true; do
             echo "    ./restore.sh <file>                  — restore from backup"
             echo "    ./refresh_reference_data.sh          — refresh airport DB from OurAirports"
             echo "    ./refresh_reference_data.sh --dry-run — preview refresh"
+            echo "    docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py list"
+            echo "    docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py set USER --operator-mode airport --airport-ident KPIT"
+            echo "    docker compose -f deploy/docker-compose.prod.yml exec airfieldops python3 scripts/manage_ops_profiles.py create-user USER --operator-mode airline --airport-ident KPIT"
             echo "    docker compose -f deploy/docker-compose.prod.yml logs --tail=100 airfieldops"
             echo "    docker exec -it airfieldops-app bash  — shell into running container"
             echo ""

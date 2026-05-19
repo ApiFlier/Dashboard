@@ -269,6 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  python3 scripts/manage_ops_profiles.py list\n"
             "  python3 scripts/manage_ops_profiles.py set meeks --operator-mode airport --airport-ident KPIT --organization-name \"Airport Ops\" --display-name \"PIT Ops\"\n"
             "  python3 scripts/manage_ops_profiles.py create-user pit-airline --operator-mode airline --airport-ident KPIT --organization-name \"Example Airline Station\" --display-name \"PIT Airline Station Ops\"\n"
+            "\nShared Airport Alerts require both operator_mode and airport_ident."
             "\nThis script never prints passwords, password hashes, or session tokens."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

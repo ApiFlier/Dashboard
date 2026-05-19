@@ -23,6 +23,11 @@ else
 fi
 
 TMP_DIR=$(mktemp -d)
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
 echo "Extracting backup to temporary directory..."
 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
 
@@ -56,7 +61,6 @@ if [ -f "$TMP_DIR/airfieldops_state.tar.gz" ]; then
 
     if [ "$confirm_restore" != "RESTORE AIRFIELDOPS" ]; then
         echo "Restore ABORTED. No changes were made to the Docker volume."
-        rm -rf "$TMP_DIR"
         exit 1
     fi
 
@@ -78,5 +82,4 @@ if [ -f "$TMP_DIR/airfieldops_state.tar.gz" ]; then
     echo "You must restart the application to use the restored state."
 fi
 
-rm -rf "$TMP_DIR"
 echo "Restore process finished."
