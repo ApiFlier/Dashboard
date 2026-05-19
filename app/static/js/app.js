@@ -1529,7 +1529,7 @@ async function renderOpsHome(container) {
             <section class="card ops-shared-alerts-card" style="margin-bottom: 1.75rem;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
                     <div>
-                        <h2 style="margin-bottom: 0.35rem;">Active Airport Alerts</h2>
+                        <h2 style="margin-bottom: 0.35rem;">Shared Airport Alerts</h2>
                         <div id="ops-shared-profile" style="font-size: 0.85rem; color: var(--text-muted);">Loading Ops profile...</div>
                     </div>
                     <button id="ops-shared-refresh-btn" class="chip" style="border: 1px solid var(--border-color); cursor: pointer; background: var(--chip-bg); color: var(--text);">Refresh</button>
@@ -1805,7 +1805,7 @@ function renderSharedAlertItem(alert, profile) {
                 <span><strong>Asset:</strong> ${affectedAsset}</span>
                 <span><strong>Source:</strong> ${utils.escapeHtml(sourceLabel)}</span>
                 <span><strong>Created:</strong> ${formatOpsDateTime(alert.created_at)}</span>
-                <span><strong>Updated:</strong> ${formatOpsDateTime(alert.updated_at)}</span>
+                ${alert.updated_at && alert.updated_at !== alert.created_at ? `<span><strong>Updated:</strong> ${formatOpsDateTime(alert.updated_at)}</span>` : ''}
                 <span><strong>Expires:</strong> ${formatOpsDateTime(alert.expires_at)}</span>
             </div>
             ${canAck ? `<button class="chip info ops-alert-ack-btn" data-alert-id="${alert.id}" style="border: none; cursor: pointer; align-self: flex-start; margin-top: 0.75rem;">Acknowledge</button>` : ''}
@@ -1841,7 +1841,10 @@ async function renderOpsSharedAlertsPanel(container, inputStyle) {
             const data = await api.opsGetSharedAlerts();
             const alerts = data.alerts || [];
             if (alerts.length === 0) {
-                listEl.innerHTML = '<p class="ops-shared-empty">No active shared airport alerts.</p>';
+                const emptyMsg = (profile && profile.operator_mode === 'airport')
+                    ? 'No active shared airport alerts. Use the form above to post one.'
+                    : 'No active shared airport alerts for your assigned airport.';
+                listEl.innerHTML = `<p class="ops-shared-empty">${emptyMsg}</p>`;
             } else {
                 listEl.innerHTML = alerts.map(alert => renderSharedAlertItem(alert, profile)).join('');
                 listEl.querySelectorAll('.ops-alert-ack-btn').forEach(btn => {
@@ -1959,11 +1962,13 @@ async function renderOpsSharedAlertsPanel(container, inputStyle) {
         profile = await api.opsMe();
         const displayName = profile.display_name || profile.username || 'Ops user';
         const airportText = profile.airport_ident ? profile.airport_ident : 'No assigned airport';
-        profileEl.innerHTML = `${utils.escapeHtml(displayName)} &middot; ${utils.escapeHtml(profile.operator_mode || 'ops')} mode &middot; ${utils.escapeHtml(airportText)}`;
+        const modeLabel = profile.operator_mode === 'airport' ? 'Airport Operator' : profile.operator_mode === 'airline' ? 'Airline Station' : profile.operator_mode || 'Ops';
+        profileEl.innerHTML = `${utils.escapeHtml(displayName)} &middot; ${utils.escapeHtml(modeLabel)} &middot; ${utils.escapeHtml(airportText)}`;
 
         if (!profile.airport_ident) {
             createWrap.style.display = 'none';
-            listEl.innerHTML = '<p class="ops-shared-empty">Shared Airport Alerts require an assigned airport for this Ops profile.</p>';
+            refreshBtn.style.display = 'none';
+            listEl.innerHTML = '<p class="ops-shared-empty">No assigned airport. Shared Airport Alerts are scoped per airport — ask your instance admin to assign an airport to this Ops profile.</p>';
             return;
         }
 
